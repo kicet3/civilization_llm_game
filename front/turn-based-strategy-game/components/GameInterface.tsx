@@ -1,45 +1,34 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import MapCanvas from './MapCanvas';
 import Sidebar from './Sidebar';
 import NpcDialog from './NpcDialog';
 import EventModal from './EventModal';
-import { 
-  mockGameState, 
-  generateHexMap, 
-  mockUnits, 
-  mockCities, 
-  mockNpcDialogs, 
-  mockEvents 
-} from '@/lib/mockData';
-import { 
-  HexTile, 
-  GameState, 
-  Unit, 
-  City, 
-  NpcDialog as NpcDialogType, 
-  GameEvent 
-} from '@/lib/types';
+import { mockNpcDialogs, mockEvents } from '@/lib/mockData';
+import { NpcDialog as NpcDialogType, GameEvent } from '@/lib/types';
+import { useGameStore } from '@/lib/store';
 
 const GameInterface: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState>(mockGameState);
-  const [hexMap, setHexMap] = useState<HexTile[]>([]);
-  const [units, setUnits] = useState<Unit[]>(mockUnits);
-  const [cities, setCities] = useState<City[]>(mockCities);
-  const [selectedTile, setSelectedTile] = useState<HexTile | null>(null);
+  const { 
+    turn,
+    year,
+    hexMap,
+    selectedTile,
+    selectTile,
+    endTurn
+  } = useGameStore();
+  
   const [activeDialog, setActiveDialog] = useState<NpcDialogType | null>(null);
   const [showEventModal, setShowEventModal] = useState<boolean>(false);
   const [currentEvent, setCurrentEvent] = useState<GameEvent>(mockEvents[0]);
   
-  // 컴포넌트 마운트 시 맵 생성
-  useEffect(() => {
-    setHexMap(generateHexMap());
-  }, []);
-  
   // 타일 선택 핸들러
-  const handleTileClick = (hex: HexTile) => {
-    setSelectedTile(hex);
+  const handleTileClick = (hex: any) => {
+    const tile = hexMap.find(t => t.q === hex.q && t.r === hex.r);
+    if (tile) {
+      selectTile(tile);
+    }
   };
   
   // NPC 대화 표시
@@ -52,10 +41,7 @@ const GameInterface: React.FC = () => {
   
   // 턴 종료 핸들러
   const handleEndTurn = () => {
-    setGameState(prev => ({
-      ...prev,
-      turn: prev.turn + 1
-    }));
+    endTurn();
     
     // 이벤트 발생 시뮬레이션 (30% 확률)
     if (Math.random() < 0.3) {
@@ -67,20 +53,16 @@ const GameInterface: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-900 text-white overflow-hidden">
       {/* 게임 맵 */}
-      <MapCanvas 
-        hexMap={hexMap}
-        selectedTile={selectedTile}
-        onTileClick={handleTileClick}
-        gameState={gameState}
-      />
+      <div className="flex-grow">
+        <MapCanvas 
+          onTileClick={handleTileClick}
+          turn={turn}
+          year={year}
+        />
+      </div>
       
       {/* 사이드바 */}
-      <Sidebar 
-        gameState={gameState}
-        selectedTile={selectedTile}
-        onEndTurn={handleEndTurn}
-        onShowNpcDialog={showNpcDialog}
-      />
+      <Sidebar />
       
       {/* NPC 대화 모달 */}
       {activeDialog && (
