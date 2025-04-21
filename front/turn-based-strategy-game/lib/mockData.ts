@@ -1,4 +1,4 @@
-import { GameState, HexTile, Unit, City, NpcDialog, GameEvent, Position, Technology, Building, UnitType } from './types';
+import { GameState, HexTile, Unit, City, NpcDialog, GameEvent, Position } from './types';
 
 // 목업 게임 상태
 export const mockGameState: GameState = {
@@ -27,35 +27,29 @@ export const mockGameState: GameState = {
 // 맵 데이터 생성 함수
 export const generateHexMap = (): HexTile[] => {
   const terrainTypes: ('plain' | 'mountain' | 'forest' | 'water' | 'desert')[] = ['plain', 'mountain', 'forest', 'water', 'desert'];
-  const resourceTypes: ('iron' | 'horses' | 'oil' | 'uranium' | 'gems' | undefined)[] = [undefined, undefined, undefined, 'iron', 'horses', 'gems'];
   const map: HexTile[] = [];
   
   for (let q = -5; q <= 5; q++) {
     for (let r = -5; r <= 5; r++) {
       if (Math.abs(q + r) <= 5) { // 균형잡힌 육각형 모양을 위한 제약조건
         const terrainIndex = Math.floor(Math.random() * terrainTypes.length);
-        const resourceIndex = Math.floor(Math.random() * resourceTypes.length);
-        
         map.push({
           q,
           r,
           s: -q-r, // 큐브 좌표계 특성: q + r + s = 0
           terrain: terrainTypes[terrainIndex],
-          hasUnit: Math.random() > 0.85,
+          hasUnit: false, // 유닛은 별도로 관리되므로 기본값은 false
           hasCity: Math.random() > 0.9,
-          owner: Math.random() > 0.7 ? (Math.random() > 0.5 ? "player" : "ai") : null,
-          resource: resourceTypes[resourceIndex]
+          owner: Math.random() > 0.7 ? (Math.random() > 0.5 ? "player" : "ai") : null
         });
       }
     }
   }
   
-  // Ensure player starts with a clear area
+  // 플레이어 시작 위치 (중앙)에 평지 생성
   const centerTile = map.find(tile => tile.q === 0 && tile.r === 0);
   if (centerTile) {
     centerTile.terrain = 'plain';
-    centerTile.hasUnit = true;
-    centerTile.hasCity = true;
     centerTile.owner = 'player';
   }
   
@@ -64,9 +58,85 @@ export const generateHexMap = (): HexTile[] => {
 
 // 목업 유닛 데이터
 export const mockUnits: Unit[] = [
-  { id: 1, name: "보병", type: "military", strength: 10, movement: 2, movementLeft: 2, position: { q: 0, r: 0 } },
-  { id: 2, name: "정착민", type: "civilian", movement: 2, movementLeft: 2, position: { q: 1, r: -1 } },
-  { id: 3, name: "궁수", type: "military", strength: 8, movement: 2, movementLeft: 2, position: { q: -1, r: 2 } }
+  { 
+    id: 1, 
+    name: "보병", 
+    type: "military", 
+    strength: 10, 
+    movement: 2,
+    movementLeft: 2,
+    position: { q: 0, r: 0 },
+    owner: "player",
+    level: 1,
+    experience: 0
+  },
+  { 
+    id: 2, 
+    name: "정착민", 
+    type: "civilian", 
+    movement: 2,
+    movementLeft: 2,
+    position: { q: 1, r: -1 },
+    owner: "player",
+    abilities: ["도시 건설"]
+  },
+  { 
+    id: 3, 
+    name: "궁수", 
+    type: "military", 
+    strength: 8, 
+    movement: 2,
+    movementLeft: 2,
+    position: { q: -1, r: 2 },
+    owner: "player",
+    level: 1,
+    experience: 0
+  },
+  { 
+    id: 4, 
+    name: "적 병사", 
+    type: "military", 
+    strength: 7, 
+    movement: 2,
+    movementLeft: 2,
+    position: { q: 3, r: -3 },
+    owner: "ai",
+    level: 1,
+    experience: 0
+  },
+  {
+    id: 5,
+    name: "기병",
+    type: "military",
+    strength: 12,
+    movement: 4,
+    movementLeft: 4,
+    position: { q: 2, r: 2 },
+    owner: "player",
+    level: 1,
+    experience: 0
+  },
+  {
+    id: 6,
+    name: "노동자",
+    type: "civilian",
+    movement: 2,
+    movementLeft: 2,
+    position: { q: -2, r: 0 },
+    owner: "player",
+    abilities: ["지형 개선"]
+  },
+  {
+    id: 7,
+    name: "갤리선",
+    type: "naval",
+    strength: 5,
+    movement: 3,
+    movementLeft: 3,
+    position: { q: -4, r: 4 },
+    owner: "player",
+    abilities: ["해상 이동"]
+  }
 ];
 
 // 목업 도시 데이터
@@ -78,253 +148,38 @@ export const mockCities: City[] = [
     population: 4, 
     buildings: ["granary", "market"], 
     position: { q: 0, r: 0 },
-    foodProduction: 10,
-    productionPoints: 5,
-    currentProduction: null
-  }
-];
-
-// 목업 유닛 타입 데이터
-export const mockUnitTypes: UnitType[] = [
-  {
-    id: "warrior",
-    name: "전사",
-    category: "military",
-    strength: 10,
-    movement: 2,
-    goldCost: 50,
-    ironCost: 0
+    food: 10,
+    growth: 15,
+    production: {
+      current: "barrack",
+      progress: 10,
+      total: 30
+    }
   },
   {
-    id: "archer",
-    name: "궁수",
-    category: "military",
-    strength: 8,
-    movement: 2,
-    goldCost: 60,
-    ironCost: 0,
-    requiredTech: "archery"
+    id: 2,
+    name: "스파르타",
+    owner: "player",
+    population: 3,
+    buildings: ["barrack"],
+    position: { q: -3, r: 1 },
+    food: 8,
+    growth: 12,
+    production: {
+      current: "warrior",
+      progress: 5,
+      total: 20
+    }
   },
   {
-    id: "spearman",
-    name: "창병",
-    category: "military",
-    strength: 12,
-    movement: 2,
-    goldCost: 70,
-    ironCost: 1,
-    requiredTech: "bronze_working"
-  },
-  {
-    id: "horseman",
-    name: "기병",
-    category: "military",
-    strength: 14,
-    movement: 4,
-    goldCost: 80,
-    ironCost: 0,
-    requiredTech: "horseback_riding"
-  },
-  {
-    id: "swordsman",
-    name: "검병",
-    category: "military",
-    strength: 15,
-    movement: 2,
-    goldCost: 90,
-    ironCost: 2,
-    requiredTech: "iron_working"
-  },
-  {
-    id: "settler",
-    name: "정착민",
-    category: "civilian",
-    movement: 2,
-    goldCost: 100,
-    ironCost: 0
-  },
-  {
-    id: "worker",
-    name: "노동자",
-    category: "civilian",
-    movement: 2,
-    goldCost: 70,
-    ironCost: 0
-  },
-  {
-    id: "scout",
-    name: "정찰병",
-    category: "civilian",
-    movement: 3,
-    goldCost: 40,
-    ironCost: 0
-  }
-];
-
-// 목업 기술 데이터
-export const mockTechnologies: Technology[] = [
-  {
-    id: "agriculture",
-    name: "농업",
-    description: "농업의 발전으로 정착 생활과 도시 건설이 가능해졌습니다.",
-    era: "ancient",
-    cost: 20,
-    prerequisites: [],
-    researched: true,
-    unlocksBuildings: ["granary"]
-  },
-  {
-    id: "pottery",
-    name: "도예",
-    description: "음식과 물을 보관할 수 있는 그릇 제작 기술을 개발했습니다.",
-    era: "ancient",
-    cost: 25,
-    prerequisites: ["agriculture"],
-    researched: false,
-    unlocksBuildings: ["storage"]
-  },
-  {
-    id: "animal_husbandry",
-    name: "목축",
-    description: "동물을 사육하는 기술을 개발했습니다.",
-    era: "ancient",
-    cost: 25,
-    prerequisites: ["agriculture"],
-    researched: false
-  },
-  {
-    id: "archery",
-    name: "궁술",
-    description: "원거리 공격이 가능한 활을 개발했습니다.",
-    era: "ancient",
-    cost: 30,
-    prerequisites: ["agriculture"],
-    researched: false,
-    unlocksUnits: ["archer"]
-  },
-  {
-    id: "mining",
-    name: "채광",
-    description: "지하 자원을 채취하는 방법을 개발했습니다.",
-    era: "ancient",
-    cost: 30,
-    prerequisites: ["agriculture"],
-    researched: false
-  },
-  {
-    id: "sailing",
-    name: "항해",
-    description: "배를 만들고 조종하는 기술을 개발했습니다.",
-    era: "ancient",
-    cost: 35,
-    prerequisites: ["pottery"],
-    researched: false,
-    unlocksUnits: ["galley"]
-  },
-  {
-    id: "bronze_working",
-    name: "청동 가공",
-    description: "청동으로 도구와 무기를 만드는 기술을 개발했습니다.",
-    era: "ancient",
-    cost: 40,
-    prerequisites: ["mining"],
-    researched: false,
-    unlocksUnits: ["spearman"],
-    unlocksBuildings: ["barracks"]
-  },
-  {
-    id: "writing",
-    name: "문자",
-    description: "정보를 기록하고 저장하는 문자 체계를 개발했습니다.",
-    era: "ancient",
-    cost: 45,
-    prerequisites: ["pottery"],
-    researched: false,
-    unlocksBuildings: ["library"]
-  },
-  {
-    id: "horseback_riding",
-    name: "승마",
-    description: "말을 타고 이동하는 기술을 개발했습니다.",
-    era: "ancient",
-    cost: 45,
-    prerequisites: ["animal_husbandry"],
-    researched: false,
-    unlocksUnits: ["horseman"]
-  },
-  {
-    id: "iron_working",
-    name: "철 가공",
-    description: "철을 제련하고 가공하는 기술을 개발했습니다.",
-    era: "classical",
-    cost: 60,
-    prerequisites: ["bronze_working"],
-    researched: false,
-    unlocksUnits: ["swordsman"]
-  }
-];
-
-// 목업 건물 데이터
-export const mockBuildings: Building[] = [
-  {
-    id: "granary",
-    name: "곡물 창고",
-    description: "도시의 식량 생산을 증가시킵니다.",
-    goldCost: 50,
-    woodCost: 10,
-    ironCost: 0,
-    requiredTech: "agriculture",
-    foodBonus: 2
-  },
-  {
-    id: "market",
-    name: "시장",
-    description: "도시의 금화 생산을 증가시킵니다.",
-    goldCost: 70,
-    woodCost: 15,
-    ironCost: 0,
-    requiredTech: "pottery",
-    goldBonus: 3
-  },
-  {
-    id: "barracks",
-    name: "병영",
-    description: "군사 유닛의 경험치 획득량이 증가합니다.",
-    goldCost: 80,
-    woodCost: 20,
-    ironCost: 0,
-    requiredTech: "bronze_working"
-  },
-  {
-    id: "library",
-    name: "도서관",
-    description: "도시의 과학 생산을 증가시킵니다.",
-    goldCost: 80,
-    woodCost: 20,
-    ironCost: 0,
-    requiredTech: "writing",
-    scienceBonus: 2
-  },
-  {
-    id: "workshop",
-    name: "작업장",
-    description: "도시의 생산력을 증가시킵니다.",
-    goldCost: 100,
-    woodCost: 30,
-    ironCost: 2,
-    requiredTech: "mining",
-    woodBonus: 2,
-    ironBonus: 1
-  },
-  {
-    id: "temple",
-    name: "신전",
-    description: "도시의 문화 생산을 증가시킵니다.",
-    goldCost: 120,
-    woodCost: 30,
-    ironCost: 0,
-    requiredTech: "pottery",
-    cultureBonus: 3
+    id: 3,
+    name: "로마",
+    owner: "ai",
+    population: 5,
+    buildings: ["granary", "market", "barrack"],
+    position: { q: 4, r: -2 },
+    food: 12,
+    growth: 18
   }
 ];
 
@@ -342,3 +197,73 @@ export const mockEvents: GameEvent[] = [
   { id: 3, title: "문화적 발전", description: "새로운 예술 형태가 탄생했습니다. 문화 점수가 증가합니다.", type: "cultural" },
   { id: 4, title: "외교 제안", description: "이집트에서 무역 협정을 제안했습니다.", type: "diplomatic" }
 ];
+
+// 타일 색상 결정 함수
+export const getTileColor = (terrain: HexTile['terrain']): string => {
+  switch(terrain) {
+    case 'plain': return '#a3c557';
+    case 'mountain': return '#8b8b8b';
+    case 'forest': return '#2d6a4f';
+    case 'water': return '#4ea8de';
+    case 'desert': return '#e9c46a';
+    default: return '#ffffff';
+  }
+};
+
+// 두 위치 사이의 거리 계산 (큐브 좌표계 사용)
+export const getDistance = (a: Position, b: Position): number => {
+  return Math.max(
+    Math.abs(a.q - b.q),
+    Math.abs(a.q + a.r - b.q - b.r),
+    Math.abs(a.r - b.r)
+  );
+};
+
+// 위치가 동일한지 확인
+export const isSamePosition = (a: Position, b: Position): boolean => {
+  return a.q === b.q && a.r === b.r;
+};
+
+// 특정 위치에서 이동 가능한 이웃 타일 계산
+export const getNeighbors = (pos: Position): Position[] => {
+  const directions = [
+    { q: 1, r: -1 }, { q: 1, r: 0 }, { q: 0, r: 1 },
+    { q: -1, r: 1 }, { q: -1, r: 0 }, { q: 0, r: -1 }
+  ];
+  
+  return directions.map(dir => ({
+    q: pos.q + dir.q,
+    r: pos.r + dir.r
+  }));
+};
+
+// 전투 결과 시뮬레이션 함수
+export const simulateCombat = (
+  attacker: Unit, 
+  defender: Unit, 
+  terrainBonus: number = 0
+): { winner: 'attacker' | 'defender', remainingStrength: number } => {
+  const attackerStr = attacker.strength || 0;
+  const defenderStr = (defender.strength || 0) + terrainBonus;
+  
+  // 간단한 전투 공식
+  const attackerPower = attackerStr * (Math.random() * 0.5 + 0.75); // 75%~125% 랜덤 변동
+  const defenderPower = defenderStr * (Math.random() * 0.5 + 0.75); // 75%~125% 랜덤 변동
+  
+  if (attackerPower > defenderPower) {
+    return { 
+      winner: 'attacker', 
+      remainingStrength: Math.floor(attackerPower - defenderPower / 2)
+    };
+  } else {
+    return { 
+      winner: 'defender', 
+      remainingStrength: Math.floor(defenderPower - attackerPower / 2)
+    };
+  }
+};
+
+// 특정 위치의 유닛 찾기
+export const findUnitAtPosition = (units: Unit[], pos: Position): Unit | undefined => {
+  return units.find(unit => unit.position.q === pos.q && unit.position.r === pos.r);
+};
