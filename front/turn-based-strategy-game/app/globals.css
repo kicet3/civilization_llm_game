@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 26, 32, 44;
+  --background-end-rgb: 17, 24, 39;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      rgb(var(--background-start-rgb)),
+      rgb(var(--background-end-rgb))
+    )
+    fixed;
+}
+
+/* Hex 그리드 관련 스타일 */
+.hexagon text {
+  font-size: 0.3em;
+  fill: white;
+  text-shadow: 0 0 2px black;
+}
+
+.hexagon {
+  transition: fill 0.2s ease-in-out;
+}
+
+.hexagon:hover {
+  filter: brightness(1.2);
+  cursor: pointer;
+}
+
+@layer components {
+  .game-button {
+    @apply px-4 py-2 rounded font-medium transition-colors duration-200;
+  }
+  
+  .game-button-blue {
+    @apply game-button bg-blue-600 hover:bg-blue-700;
+  }
+  
+  .game-button-green {
+    @apply game-button bg-green-600 hover:bg-green-700;
+  }
+  
+  .game-button-purple {
+    @apply game-button bg-purple-600 hover:bg-purple-700;
+  }
+  
+  .game-button-red {
+    @apply game-button bg-red-600 hover:bg-red-700;
+  }
+  
+  .game-button-gray {
+    @apply game-button bg-gray-600 hover:bg-gray-700;
+  }
+}
