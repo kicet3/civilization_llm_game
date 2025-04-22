@@ -9,6 +9,8 @@ import {
   Building,
   ResourceProduction,
   UnitType,
+  NpcDialog,
+  GameEvent,
 } from './types';
 import { 
   mockGameState, 
@@ -18,8 +20,10 @@ import {
   mockTechnologies,
   mockBuildings,
   mockUnitTypes,
+  mockNpcDialogs,
+  mockEvents
 } from './mockData';
-import { getNeighbors, isSamePosition } from './utils';
+import { getNeighbors, isSamePosition, getRelationshipStatus } from './utils';
 
 interface GameStore extends GameState {
   // Map state
@@ -33,6 +37,10 @@ interface GameStore extends GameState {
   buildings: Building[];
   unitTypes: UnitType[];
   
+  // NPC and Events
+  npcs: NpcDialog[];
+  events: GameEvent[];
+  
   // Actions
   selectTile: (tile: HexTile | null) => void;
   moveUnit: (unitId: number, destination: Position) => void;
@@ -40,6 +48,23 @@ interface GameStore extends GameState {
   constructBuilding: (cityId: number, buildingId: string) => void;
   researchTechnology: (techId: string) => void;
   trainUnit: (cityId: number, unitTypeId: string) => void;
+  
+  // 도시 관련 액션
+  updateCity: (cityId: number, updates: Partial<City>) => void;
+  updateCityWorkforce: (cityId: number, workforce: { 
+    food?: number;
+    production?: number;
+    science?: number;
+    gold?: number;
+    culture?: number;
+  }) => void;
+  updateCityProduction: (cityId: number, productionId: string) => void;
+  cancelProduction: (cityId: number) => void;
+  
+  // 외교 관련 액션
+  updateDiplomacyRelationship: (nationId: number, change: number) => void;
+  
+  // 턴 종료
   endTurn: () => void;
 }
 
@@ -53,6 +78,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   technologies: mockTechnologies,
   buildings: mockBuildings,
   unitTypes: mockUnitTypes,
+  npcs: mockNpcDialogs,
+  events: mockEvents,
   
   // Select a tile on the map
   selectTile: (tile) => set({ selectedTile: tile }),
@@ -82,10 +109,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     updatedUnits[unitIndex] = {
       ...unit,
       position: destination,
-      movementLeft: unit.movementLeft - distance,
+      movementLeft: unit.movementLeft ? unit.movementLeft - distance : 0,
     };
     
-    set({ units: updatedUnits });
+    // 이동한 타일에 유닛이 있음을 표시
+    const updatedHexMap = hexMap.map(tile => {
+      if (tile.q === destination.q && tile.r === destination.r) {
+        return { ...tile, hasUnit: true };
+      }
+      if (tile.q === unit.position.q && tile.r === unit.position.r) {
+        // 기존 위치에서는 유닛 제거 (다른 유닛이 없다고 가정)
+        return { ...tile, hasUnit: false };
+      }
+      return tile;
+    });
+    
+    set({ units: updatedUnits, hexMap: updatedHexMap });
   },
   
   // Build a new city
@@ -119,6 +158,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       foodProduction: 2,
       productionPoints: 0,
       currentProduction: null,
+      food: 0,
+      foodToGrow: 10,
+      health: 100,
+      happiness: 90,
+      workforce: {
+        food: 1,
+        production: 0,
+        science: 0,
+        gold: 0,
+        culture: 0
+      },
+      borderGrowth: 0,
+      borderGrowthRequired: 100,
+      cityRadius: 1,
+      workingTiles: [position]
     };
     
     // Remove the settler
@@ -131,6 +185,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         : t
     );
     
+    // Update tiles around the city as owned by player
+    const cityNeighbors = getNeighbors(position);
+    const finalHexMap = updatedHexMap.map(t => {
+      if (cityNeighbors.some(n => n.q === t.q && n.r === t.r)) {
+        return { ...t, owner: 'player' };
+      }
+      return t;
+    });
+    
     // Update player resources
     const updatedPlayerInfo = {
       ...playerInfo,
@@ -140,7 +203,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ 
       cities: [...cities, newCity],
       units: updatedUnits,
-      hexMap: updatedHexMap,
+      hexMap: finalHexMap,
       playerInfo: updatedPlayerInfo,
     });
   },
@@ -162,8 +225,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     // Check if player has enough resources
     if (playerInfo.gold < building.goldCost) return;
-    if (playerInfo.resources.wood < building.woodCost) return;
-    if (playerInfo.resources.iron < building.ironCost) return;
+    if (playerInfo.resources.wood < (building.woodCost || 0)) return;
+    if (playerInfo.resources.iron < (building.ironCost || 0)) return;
     
     // Update city buildings
     const updatedCities = [...cities];
@@ -178,8 +241,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       gold: playerInfo.gold - building.goldCost,
       resources: {
         ...playerInfo.resources,
-        wood: playerInfo.resources.wood - building.woodCost,
-        iron: playerInfo.resources.iron - building.ironCost,
+        wood: playerInfo.resources.wood - (building.woodCost || 0),
+        iron: playerInfo.resources.iron - (building.ironCost || 0),
       }
     };
     
@@ -243,17 +306,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     // Check if player has enough resources
     if (playerInfo.gold < unitType.goldCost) return;
-    if (playerInfo.resources.iron < unitType.ironCost) return;
+    if (playerInfo.resources.iron < (unitType.ironCost || 0)) return;
     
     // Create the new unit
     const newUnit: Unit = {
       id: Date.now(), // Simple unique ID
       name: unitType.name,
       type: unitType.category,
-      strength: unitType.strength,
+      strength: unitType.strength || 0,
       movement: unitType.movement,
       movementLeft: unitType.movement,
       position: { ...city.position },
+      owner: "player",
+      level: 1,
+      experience: 0,
+      abilities: unitType.abilities,
+      visionRange: 2
     };
     
     // Update player resources
@@ -262,19 +330,125 @@ export const useGameStore = create<GameStore>((set, get) => ({
       gold: playerInfo.gold - unitType.goldCost,
       resources: {
         ...playerInfo.resources,
-        iron: playerInfo.resources.iron - unitType.ironCost,
+        iron: playerInfo.resources.iron - (unitType.ironCost || 0),
       }
     };
+    
+    // Update hexMap to show unit
+    const updatedHexMap = get().hexMap.map(tile => {
+      if (tile.q === city.position.q && tile.r === city.position.r) {
+        return { ...tile, hasUnit: true };
+      }
+      return tile;
+    });
     
     set({ 
       units: [...units, newUnit],
       playerInfo: updatedPlayerInfo,
+      hexMap: updatedHexMap
     });
+  },
+  
+  // 도시 정보 업데이트
+  updateCity: (cityId, updates) => {
+    const { cities } = get();
+    const cityIndex = cities.findIndex(city => city.id === cityId);
+    
+    if (cityIndex === -1) return; // City not found
+    
+    const updatedCities = [...cities];
+    updatedCities[cityIndex] = {
+      ...updatedCities[cityIndex],
+      ...updates
+    };
+    
+    set({ cities: updatedCities });
+  },
+  
+  // 도시 시민 배치 업데이트
+  updateCityWorkforce: (cityId, workforce) => {
+    const { cities } = get();
+    const cityIndex = cities.findIndex(city => city.id === cityId);
+    
+    if (cityIndex === -1) return; // City not found
+    
+    const city = cities[cityIndex];
+    
+    const updatedCities = [...cities];
+    updatedCities[cityIndex] = {
+      ...city,
+      workforce: {
+        ...city.workforce,
+        ...workforce
+      }
+    };
+    
+    set({ cities: updatedCities });
+  },
+  
+  // 도시 생산 아이템 업데이트
+  updateCityProduction: (cityId, productionId) => {
+    const { cities } = get();
+    const cityIndex = cities.findIndex(city => city.id === cityId);
+    
+    if (cityIndex === -1) return; // City not found
+    
+    const city = cities[cityIndex];
+    
+    // 생산 아이템 변경 및 생산 포인트 초기화
+    const updatedCities = [...cities];
+    updatedCities[cityIndex] = {
+      ...city,
+      currentProduction: productionId,
+      productionPoints: 0
+    };
+    
+    set({ cities: updatedCities });
+  },
+  
+  // 생산 취소
+  cancelProduction: (cityId) => {
+    const { cities } = get();
+    const cityIndex = cities.findIndex(city => city.id === cityId);
+    
+    if (cityIndex === -1) return; // City not found
+    
+    const city = cities[cityIndex];
+    
+    // 생산 취소 및 생산 포인트 초기화
+    const updatedCities = [...cities];
+    updatedCities[cityIndex] = {
+      ...city,
+      currentProduction: null,
+      productionPoints: 0
+    };
+    
+    set({ cities: updatedCities });
+  },
+  
+  // 외교 관계 업데이트
+  updateDiplomacyRelationship: (nationId, change) => {
+    const { diplomacy } = get();
+    const nationIndex = diplomacy.findIndex(nation => nation.nationId === nationId);
+    
+    if (nationIndex === -1) return; // Nation not found
+    
+    const nation = diplomacy[nationIndex];
+    const newRelationship = Math.min(100, Math.max(-100, nation.relationship + change));
+    
+    const updatedDiplomacy = [...diplomacy];
+    updatedDiplomacy[nationIndex] = {
+      ...nation,
+      relationship: newRelationship,
+      status: getRelationshipStatus(newRelationship)
+    };
+    
+    set({ diplomacy: updatedDiplomacy });
   },
   
   // End the current turn and process game state updates
   endTurn: () => {
-    const { turn, year, playerInfo, cities, units, hexMap } = get();
+    const { turn, year, playerInfo, cities, units, hexMap, diplomacy } = get();
     
     // Calculate resource production from cities
     let foodProduction = 0;
@@ -282,47 +456,224 @@ export const useGameStore = create<GameStore>((set, get) => ({
     let ironProduction = 0;
     let scienceProduction = 0;
     let goldProduction = 0;
+    let cultureProduction = 0;
     
-    // Process city production
-    cities.forEach(city => {
+    // 업데이트된 도시 배열
+    const updatedCities = [...cities].map(city => {
       if (city.owner === 'player') {
-        // Base production from population
-        foodProduction += city.foodProduction || city.population * 2;
-        woodProduction += city.population;
-        scienceProduction += city.population;
-        goldProduction += city.population * 2;
+        // 도시 생산량 계산
+        let cityFoodProduction = 0;
+        let cityProductionPoints = 0;
+        let cityScienceProduction = 0;
+        let cityGoldProduction = 0;
+        let cityCultureProduction = 0;
         
-        // Additional production from buildings
+        // 기본 생산량
+        cityFoodProduction += city.population * 2;
+        cityProductionPoints += city.population;
+        cityScienceProduction += city.population;
+        cityGoldProduction += city.population * 2;
+        
+        // 시민 배치에 따른 추가 생산량
+        if (city.workforce) {
+          cityFoodProduction += city.workforce.food ? city.workforce.food * 2 : 0;
+          cityProductionPoints += city.workforce.production ? city.workforce.production * 2 : 0;
+          cityScienceProduction += city.workforce.science ? city.workforce.science * 3 : 0;
+          cityGoldProduction += city.workforce.gold ? city.workforce.gold * 3 : 0;
+          cityCultureProduction += city.workforce.culture ? city.workforce.culture * 2 : 0;
+        }
+        
+        // 건물 추가 생산량
         city.buildings.forEach(buildingId => {
           const building = get().buildings.find(b => b.id === buildingId);
           if (building) {
-            foodProduction += building.foodBonus || 0;
-            woodProduction += building.woodBonus || 0;
-            ironProduction += building.ironBonus || 0;
-            scienceProduction += building.scienceBonus || 0;
-            goldProduction += building.goldBonus || 0;
+            cityFoodProduction += building.foodBonus || 0;
+            cityProductionPoints += building.productionBonus || 0;
+            cityScienceProduction += building.scienceBonus || 0;
+            cityGoldProduction += building.goldBonus || 0;
+            cityCultureProduction += building.cultureBonus || 0;
           }
         });
+        
+        // 글로벌 생산량에 추가
+        foodProduction += cityFoodProduction;
+        woodProduction += cityProductionPoints / 2; // 생산력의 일부는 목재 생산으로 가정
+        scienceProduction += cityScienceProduction;
+        goldProduction += cityGoldProduction;
+        cultureProduction += cityCultureProduction;
+        
+        // 도시 식량 및 성장 업데이트
+        let newFood = (city.food || 0) + cityFoodProduction;
+        let newPopulation = city.population;
+        let newFoodToGrow = city.foodToGrow || 10;
+        
+        // 인구 성장 체크
+        if (newFood >= newFoodToGrow) {
+          newPopulation += 1;
+          newFood -= newFoodToGrow;
+          newFoodToGrow = 10 + (newPopulation * 5); // 인구가 많을수록 더 많은 식량 필요
+        }
+        
+        // 영토 확장 체크
+        let newBorderGrowth = (city.borderGrowth || 0) + cityCultureProduction;
+        let newBorderGrowthRequired = city.borderGrowthRequired || 100;
+        let newCityRadius = city.cityRadius || 1;
+        
+        if (newBorderGrowth >= newBorderGrowthRequired) {
+          newCityRadius += 1;
+          newBorderGrowth -= newBorderGrowthRequired;
+          newBorderGrowthRequired = 100 + (newCityRadius * 50); // 영토가 클수록 확장에 더 많은 문화 필요
+        }
+        
+        // 생산 진행
+        let newProductionPoints = city.productionPoints || 0;
+        if (city.currentProduction) {
+          newProductionPoints += cityProductionPoints;
+          
+          // 생산 완료 체크
+          const buildingProduction = get().buildings.find(b => b.id === city.currentProduction);
+          const unitProduction = get().unitTypes.find(u => u.id === city.currentProduction);
+          
+          const productionCost = buildingProduction 
+            ? buildingProduction.productionCost || 30
+            : unitProduction 
+              ? unitProduction.goldCost
+              : 0;
+          
+          if (newProductionPoints >= productionCost) {
+            // 생산 완료
+            if (buildingProduction) {
+              // 건물 완성
+              return {
+                ...city,
+                food: newFood,
+                foodToGrow: newFoodToGrow,
+                population: newPopulation,
+                borderGrowth: newBorderGrowth,
+                borderGrowthRequired: newBorderGrowthRequired,
+                cityRadius: newCityRadius,
+                productionPoints: 0,
+                currentProduction: null,
+                buildings: [...city.buildings, city.currentProduction]
+              };
+            } else if (unitProduction) {
+              // 유닛 생산 완료 - 게임 스토어에서 별도로 처리
+              // (trainUnit 함수를 여기서 직접 호출할 수 없으므로 외부에서 처리)
+              return {
+                ...city,
+                food: newFood,
+                foodToGrow: newFoodToGrow,
+                population: newPopulation,
+                borderGrowth: newBorderGrowth,
+                borderGrowthRequired: newBorderGrowthRequired,
+                cityRadius: newCityRadius,
+                productionPoints: 0,
+                currentProduction: null
+              };
+            }
+          }
+        }
+        
+        // 일반 업데이트
+        return {
+          ...city,
+          food: newFood,
+          foodToGrow: newFoodToGrow,
+          population: newPopulation,
+          borderGrowth: newBorderGrowth,
+          borderGrowthRequired: newBorderGrowthRequired,
+          cityRadius: newCityRadius,
+          productionPoints: newProductionPoints
+        };
+      }
+      
+      return city;
+    });
+    
+    // 유닛 생산 처리
+    const citiesToProduceUnits = cities.filter(city => 
+      city.owner === 'player' && 
+      city.currentProduction && 
+      get().unitTypes.some(ut => ut.id === city.currentProduction) &&
+      (city.productionPoints || 0) >= (
+        get().unitTypes.find(ut => ut.id === city.currentProduction)?.goldCost || 0
+      )
+    );
+    
+    // 각 도시에서 유닛 생산
+    citiesToProduceUnits.forEach(city => {
+      const unitTypeId = city.currentProduction!;
+      const unitType = get().unitTypes.find(ut => ut.id === unitTypeId);
+      
+      if (unitType) {
+        const newUnit: Unit = {
+          id: Date.now() + Math.floor(Math.random() * 1000), // Unique ID
+          name: unitType.name,
+          type: unitType.category,
+          strength: unitType.strength || 0,
+          movement: unitType.movement,
+          movementLeft: unitType.movement,
+          position: { ...city.position },
+          owner: "player",
+          level: 1,
+          experience: 0,
+          abilities: unitType.abilities,
+          visionRange: 2
+        };
+        
+        units.push(newUnit);
+        
+        // 해당 타일에 유닛 표시
+        const tileIndex = hexMap.findIndex(t => t.q === city.position.q && t.r === city.position.r);
+        if (tileIndex !== -1) {
+          hexMap[tileIndex] = {
+            ...hexMap[tileIndex],
+            hasUnit: true
+          };
+        }
       }
     });
     
-    // Update player resources
-    const updatedPlayerInfo = {
-      ...playerInfo,
-      gold: playerInfo.gold + goldProduction,
-      science: playerInfo.science + scienceProduction,
-      resources: {
-        food: playerInfo.resources.food + foodProduction,
-        wood: playerInfo.resources.wood + woodProduction,
-        iron: playerInfo.resources.iron + ironProduction,
+    // 외교 관계 자연 변화
+    const updatedDiplomacy = diplomacy.map(relation => {
+      let change = 0;
+      
+      // 랜덤 요소 추가 (현실적인 외교 관계 변화를 위해)
+      if (Math.random() < 0.3) { // 30% 확률로 관계 변화
+        change = Math.floor(Math.random() * 3) - 1; // -1, 0, 1 중 하나
+        
+        // 관계가 이미 매우 좋거나 나쁘면 평균으로 회귀하는 경향
+        if (relation.relationship > 80) change -= 1;
+        else if (relation.relationship < -80) change += 1;
       }
-    };
+      
+      const newRelationship = Math.min(100, Math.max(-100, relation.relationship + change));
+      
+      return {
+        ...relation,
+        relationship: newRelationship,
+        status: getRelationshipStatus(newRelationship)
+      };
+    });
     
     // Reset unit movement for next turn
     const updatedUnits = units.map(unit => ({
       ...unit,
       movementLeft: unit.movement,
     }));
+    
+    // Update player resources
+    const updatedPlayerInfo = {
+      ...playerInfo,
+      gold: playerInfo.gold + goldProduction,
+      science: playerInfo.science + scienceProduction,
+      culture: playerInfo.culture + cultureProduction,
+      resources: {
+        food: playerInfo.resources.food + foodProduction,
+        wood: playerInfo.resources.wood + woodProduction,
+        iron: playerInfo.resources.iron + ironProduction,
+      }
+    };
     
     // Increment turn counter
     const newTurn = turn + 1;
@@ -352,6 +703,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       year: newYear,
       playerInfo: updatedPlayerInfo,
       units: updatedUnits,
+      cities: updatedCities,
+      diplomacy: updatedDiplomacy
     });
   },
 }));
