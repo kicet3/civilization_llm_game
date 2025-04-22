@@ -8,17 +8,23 @@ const TechnologyResearch: React.FC = () => {
   const { technologies, playerInfo, researchTechnology } = useGameStore();
   const [showAllTechs, setShowAllTechs] = useState(false);
   
-  // 현재 연구 가능한 기술 필터링
-  const researchableTechs = technologies.filter(tech => {
-    // 이미 연구한 기술은 제외
-    if (tech.researched) return false;
-    
+  // 현재 연구 가능한 기술만 필터링합니다.
+  // 1. 이미 연구한 기술은 제외
+  // 2. 모든 선행 기술(prerequisites)이 연구되었는지 확인
+  const researchableTechs = technologies.filter((tech) => {
+    if (tech.researched) return false; // 이미 연구한 기술 제외
+
+    // 선행 기술이 없는 경우 바로 연구 가능
+    if (!tech.prerequisites || tech.prerequisites.length === 0) return true;
+
     // 모든 선행 기술이 연구되었는지 확인
-    return tech.prerequisites.every(prereqId => {
-      const prereqTech = technologies.find(t => t.id === prereqId);
+    const allPrerequisitesResearched = tech.prerequisites.every((prereqId) => {
+      const prereqTech = technologies.find((t) => t.id === prereqId);
       return prereqTech && prereqTech.researched;
     });
+    return allPrerequisitesResearched;
   });
+
   
   // 전체 기술 트리 구조
   const techTree = organizeByEra(technologies);

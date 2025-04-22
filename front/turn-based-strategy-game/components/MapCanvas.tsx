@@ -1,41 +1,50 @@
+// MapCanvas.tsx
 'use client'
 
 import React from 'react';
 import { Hexagon, HexGrid, Layout, Text } from 'react-hexgrid';
-import { HexTile, GameState, Unit } from '@/lib/types';
-import { getTileColor, isSamePosition } from '@/lib/utils';
+import { useGameStore } from '@/lib/store';
+import { getTileColor } from '@/lib/utils';
 
 interface MapCanvasProps {
-  hexMap: HexTile[];
-  selectedTile: HexTile | null;
-  gameState: GameState;
-  units: Unit[];
-  onTileClick: (hex: HexTile) => void;
+  onTileClick: (hex: any) => void;
+  turn: number;
+  year: string;
 }
 
 const MapCanvas: React.FC<MapCanvasProps> = ({ 
-  hexMap, 
-  selectedTile, 
-  gameState, 
-  units,
-  onTileClick 
+  onTileClick,
+  turn,
+  year
 }) => {
+  // Zustand 스토어에서 필요한 상태들을 가져옵니다
+  const { hexMap, selectedTile, units, cities } = useGameStore();
+  
   // 특정 타일에 있는 유닛 찾기
-  const findUnitAtTile = (q: number, r: number): Unit | undefined => {
+  const findUnitAtTile = (q: number, r: number) => {
     return units.find(unit => 
       unit.position.q === q && unit.position.r === r
     );
   };
 
   // 유닛 타입에 따른 아이콘 결정
-  const getUnitIcon = (unit: Unit): string => {
-    if (unit.type === 'military') {
+  const getUnitIcon = (unitType: string): string => {
+    if (unitType === 'military') {
       return '⚔️';
-    } else if (unit.type === 'civilian') {
+    } else if (unitType === 'civilian') {
       return '👷';
+    } else if (unitType === 'naval') {
+      return '⛵';
     } else {
       return '🏃';
     }
+  };
+
+  // 타일에 있는 도시 찾기
+  const findCityAtTile = (q: number, r: number) => {
+    return cities.find(city => 
+      city.position.q === q && city.position.r === r
+    );
   };
 
   return (
@@ -44,6 +53,7 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
         <Layout size={{ x: 5, y: 5 }} flat={true} spacing={1.05} origin={{ x: 0, y: 0 }}>
           {hexMap.map((hex, index) => {
             const unitAtTile = findUnitAtTile(hex.q, hex.r);
+            const cityAtTile = findCityAtTile(hex.q, hex.r);
             
             return (
               <Hexagon
@@ -51,20 +61,18 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
                 q={hex.q}
                 r={hex.r}
                 s={hex.s}
-                fill={hex.owner === "player" ? `${getTileColor(hex.terrain)}` : 
-                      hex.owner === "ai" ? `${getTileColor(hex.terrain)}` : 
-                      getTileColor(hex.terrain)}
+                fill={getTileColor(hex.terrain)}
                 onClick={() => onTileClick(hex)}
                 className={selectedTile && selectedTile.q === hex.q && selectedTile.r === hex.r ? 'stroke-white stroke-2' : ''}
               >
                 {/* 도시가 있는 경우 도시 아이콘 표시 */}
-                {hex.hasCity && (
-                  <Text>{hex.owner === "player" ? "🏛️" : "🏙️"}</Text>
+                {cityAtTile && (
+                  <Text>{cityAtTile.owner === "player" ? "🏛️" : "🏙️"}</Text>
                 )}
                 
                 {/* 유닛이 있는 경우 유닛 아이콘 표시 */}
-                {unitAtTile && !hex.hasCity && (
-                  <Text>{getUnitIcon(unitAtTile)}</Text>
+                {unitAtTile && !cityAtTile && (
+                  <Text>{getUnitIcon(unitAtTile.type)}</Text>
                 )}
               </Hexagon>
             );
@@ -74,15 +82,20 @@ const MapCanvas: React.FC<MapCanvasProps> = ({
       
       {/* 현재 턴 표시 */}
       <div className="absolute top-4 left-4 bg-gray-800 bg-opacity-70 p-2 rounded-lg">
-        <p>턴: {gameState.turn} | {gameState.year}</p>
+        <p>턴: {turn} | {year}</p>
       </div>
       
       {/* 선택된 타일 정보 */}
       {selectedTile && (
         <div className="absolute top-4 right-4 bg-gray-800 bg-opacity-70 p-2 rounded-lg">
-          <p>지형: {selectedTile.terrain}</p>
+          <p>지형: {
+            selectedTile.terrain === 'plain' ? '평지' :
+            selectedTile.terrain === 'mountain' ? '산' : 
+            selectedTile.terrain === 'forest' ? '숲' :
+            selectedTile.terrain === 'water' ? '물' : '사막'
+          }</p>
           <p>좌표: ({selectedTile.q}, {selectedTile.r})</p>
-          {selectedTile.owner && <p>소유: {selectedTile.owner}</p>}
+          {selectedTile.owner && <p>소유: {selectedTile.owner === 'player' ? '플레이어' : 'AI'}</p>}
           {findUnitAtTile(selectedTile.q, selectedTile.r) && (
             <p className="text-yellow-400">유닛 있음 (클릭하여 관리)</p>
           )}

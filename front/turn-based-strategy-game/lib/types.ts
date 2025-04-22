@@ -47,22 +47,6 @@ export interface GameState {
   }
 
   
-  // NPC 대화 타입
-  export interface NpcDialog {
-    id: number;
-    npcName: string;
-    message: string;
-    relationship: '동맹' | '중립' | '적대';
-  }
-  
-  // 게임 이벤트 타입
-  export interface GameEvent {
-    id: number;
-    title: string;
-    description: string;
-    type: 'science' | 'disaster' | 'diplomatic' | 'cultural';
-  }
-
   // 게임 상태 타입
 export interface GameState {
   version: string;
@@ -164,22 +148,6 @@ export interface Technology {
   researched: boolean;
   unlocksUnits?: string[];
   unlocksBuildings?: string[];
-}
-
-// NPC 대화 타입
-export interface NpcDialog {
-  id: number;
-  npcName: string;
-  message: string;
-  relationship: '동맹' | '중립' | '적대';
-}
-
-// 게임 이벤트 타입
-export interface GameEvent {
-  id: number;
-  title: string;
-  description: string;
-  type: 'science' | 'disaster' | 'diplomatic' | 'cultural';
 }
 
 export interface GameState {

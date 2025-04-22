@@ -1,4 +1,4 @@
-import { GameState, HexTile, Unit, City, NpcDialog, GameEvent, Position } from './types';
+import { GameState, HexTile, Unit, City, NpcDialog, GameEvent, Position, Technology, Building, UnitType } from './types';
 
 // 목업 게임 상태
 export const mockGameState: GameState = {
@@ -267,3 +267,113 @@ export const simulateCombat = (
 export const findUnitAtPosition = (units: Unit[], pos: Position): Unit | undefined => {
   return units.find(unit => unit.position.q === pos.q && unit.position.r === pos.r);
 };
+
+// 목업 기술 데이터
+export const mockTechnologies: Technology[] = [
+  {
+    id: "agriculture",
+    name: "농업",
+    cost: 20,
+    description: "식량 생산량 증가",
+    era: "고대",
+    unlocks: ["irrigation", "pottery"]
+  },
+  {
+    id: "bronze_working",
+    name: "청동기",
+    cost: 30,
+    description: "전투력 증가",
+    era: "고대",
+    unlocks: ["iron_working"]
+  },
+  {
+    id: "writing",
+    name: "문자",
+    cost: 25,
+    description: "과학 생산량 증가",
+    era: "고대",
+    unlocks: ["philosophy"]
+  }
+];
+
+// 목업 건물 데이터
+export const mockBuildings: Building[] = [
+  {
+    id: "granary",
+    name: "곡물 저장고",
+    description: "식량 저장량 증가",
+    goldCost: 60,
+    woodCost: 20,
+    ironCost: 0,
+    maintenance: 1,
+    effects: {
+      food: 2
+    }
+  },
+  {
+    id: "barrack",
+    name: "병영",
+    description: "군사 유닛 생산",
+    goldCost: 80,
+    woodCost: 30,
+    ironCost: 10,
+    maintenance: 2,
+    effects: {
+      military: 1
+    }
+  },
+  {
+    id: "market",
+    name: "시장",
+    description: "골드 생산량 증가",
+    goldCost: 100,
+    woodCost: 20,
+    ironCost: 0,
+    maintenance: 2,
+    effects: {
+      gold: 3
+    }
+  }
+];
+
+// 목업 유닛 타입 데이터
+export const mockUnitTypes: UnitType[] = [
+  {
+    id: "settler",
+    name: "정착민",
+    type: "civilian",
+    movement: 2,
+    goldCost: 100,
+    description: "새로운 도시를 건설할 수 있음",
+    requirements: []
+  },
+  {
+    id: "warrior",
+    name: "전사",
+    type: "military",
+    movement: 2,
+    strength: 10,
+    goldCost: 50,
+    description: "기본 전투 유닛",
+    requirements: []
+  },
+  {
+    id: "archer",
+    name: "궁수",
+    type: "military",
+    movement: 2,
+    strength: 8,
+    goldCost: 60,
+    description: "원거리 공격 유닛",
+    requirements: ["bronze_working"]
+  },
+  {
+    id: "worker",
+    name: "노동자",
+    type: "civilian",
+    movement: 2,
+    goldCost: 70,
+    description: "지형을 개선할 수 있음",
+    requirements: []
+  }
+];
