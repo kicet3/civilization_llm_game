@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Hexagon, HexGrid, Layout, Pattern } from 'react-hexgrid';
 import { useGameStore } from '@/lib/store';
 import { HexTile, Position, TileVisibility } from '@/lib/types';
@@ -12,7 +12,7 @@ interface FogOfWarProps {
   fadeSpeed?: number; // 페이드 속도 (밀리초)
 }
 
-const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({ 
+const FogOfWar: React.FC<FogOfWarProps> = ({ 
   viewBox, 
   onTileClick,
   fadeSpeed = 300
@@ -20,16 +20,14 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
   // 게임 스토어에서 필요한 데이터 가져오기
   const { hexMap, units, cities, turn } = useGameStore();
   
-  // 애니메이션 참조
-  const animationFrameRef = useRef<number | null>(null);
-  // 시야 상태 저장
-  const visibilityMapRef = useRef<Map<string, { 
+  // 시야 상태 관리
+  const [visibilityMap, setVisibilityMap] = useState<Map<string, { 
     status: TileVisibility, 
     opacity: number 
   }>>(new Map());
   
   // 타일의 시야 상태 계산 (유닛과 도시 위치에 따라)
-  const calculateVisibility = (): Map<string, TileVisibility> => {
+  const calculateVisibility = () => {
     const result = new Map<string, TileVisibility>();
     
     // 플레이어 유닛의 위치 모음
@@ -64,7 +62,7 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
           if (distance <= 1) return true;
           
           // 거리가 1보다 크면 시야 차단 확인 (라인 오브 사이트)
-          return !hasLineOfSightObstacle(pos, { q: tile.q, r: tile.r });
+          return !hasLineOfSightObstacle(pos, { q: tile.q, r: tile.r }, hexMap);
         }
         
         return false;
@@ -74,7 +72,7 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
         result.set(tileKey, 'visible');
       } else {
         // 타일에 explored 속성이 있으면 사용, 없으면 임의로 결정 (데모용)
-        const isExplored = tile.explored ?? (tile.owner === 'player' || Math.random() > 0.5);
+        const isExplored = tile.explored ?? (tile.owner === 'player' || Math.random() > 0.7);
         result.set(tileKey, isExplored ? 'explored' : 'hidden');
       }
     });
@@ -83,7 +81,7 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
   };
   
   // 두 위치 사이에 시야를 가로막는 장애물이 있는지 확인
-  const hasLineOfSightObstacle = (from: Position, to: Position): boolean => {
+  const hasLineOfSightObstacle = (from: Position, to: Position, hexMap: HexTile[]): boolean => {
     // 직접 이웃한 타일은 항상 볼 수 있음
     const distance = getDistance(from, to);
     if (distance <= 1) return false;
@@ -140,85 +138,80 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
     return results;
   };
 
-  // 턴이 변경될 때 시야 상태 업데이트
+  // 턴이 변경될 때마다 시야 상태 업데이트
   useEffect(() => {
     // 새 시야 상태 계산
     const newVisibility = calculateVisibility();
     
-    // 현재 저장된 시야 상태
-    const currentVisibilityMap = visibilityMapRef.current;
+    // 애니메이션을 위해 현재 상태와 새 상태를 병합
+    const updatedVisibilityMap = new Map(visibilityMap);
     
-    // 시야 상태 업데이트 및 애니메이션 준비
     newVisibility.forEach((status, key) => {
-      const current = currentVisibilityMap.get(key);
+      const current = updatedVisibilityMap.get(key);
       
       if (!current) {
-        // 새로운 타일이면 추가
-        currentVisibilityMap.set(key, { 
+        // 새로운 타일
+        updatedVisibilityMap.set(key, { 
           status, 
-          opacity: status === 'visible' ? 0 : 1 
+          opacity: status === 'visible' ? 0 : 
+                  status === 'explored' ? 0.6 : 0.9 
         });
       } else if (current.status !== status) {
-        // 상태가 변경되었으면 업데이트
-        currentVisibilityMap.set(key, { 
+        // 상태가 변경된 타일
+        updatedVisibilityMap.set(key, { 
           status, 
-          opacity: current.opacity 
+          opacity: current.opacity // 현재 불투명도 유지 (애니메이션으로 변경)
         });
       }
     });
     
-    // 애니메이션 시작
-    startFadeAnimation();
+    setVisibilityMap(updatedVisibilityMap);
     
-    // 클린업
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [turn, units, cities]);
+  }, [turn, units, cities, hexMap]);
   
-  // 페이드 애니메이션 실행
-  const startFadeAnimation = () => {
-    const visibilityMap = visibilityMapRef.current;
+  // 불투명도 애니메이션 처리
+  useEffect(() => {
+    if (visibilityMap.size === 0) return;
+    
     const startTime = Date.now();
     
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / fadeSpeed);
+    const animateOpacity = () => {
+      const elapsed = Math.min(fadeSpeed, Date.now() - startTime);
+      const progress = elapsed / fadeSpeed;
       
-      let needsUpdate = false;
+      let hasUpdates = false;
+      const updatedMap = new Map<string, { status: TileVisibility, opacity: number }>();
       
-      // 각 타일의 불투명도 업데이트
       visibilityMap.forEach((data, key) => {
+        // 목표 불투명도 계산
         const targetOpacity = data.status === 'visible' ? 0 : 
-                            data.status === 'explored' ? 0.6 : 0.9;
+                             data.status === 'explored' ? 0.6 : 0.9;
         
-        const currentOpacity = data.opacity;
-        const newOpacity = currentOpacity + (targetOpacity - currentOpacity) * progress;
+        // 현재 불투명도에서 목표 불투명도로 보간
+        const newOpacity = data.opacity + (targetOpacity - data.opacity) * progress;
         
-        if (Math.abs(newOpacity - currentOpacity) > 0.01) {
-          visibilityMap.set(key, { ...data, opacity: newOpacity });
-          needsUpdate = true;
+        // 값이 충분히 변경되었는지 확인
+        if (Math.abs(newOpacity - data.opacity) > 0.01) {
+          hasUpdates = true;
+          updatedMap.set(key, { status: data.status, opacity: newOpacity });
+        } else {
+          // 거의 목표에 도달했으면 정확한 값 사용
+          updatedMap.set(key, { status: data.status, opacity: targetOpacity });
         }
       });
       
-      // 애니메이션 계속할지 여부
-      if (needsUpdate && progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        animationFrameRef.current = null;
+      if (hasUpdates) {
+        setVisibilityMap(updatedMap);
+        requestAnimationFrame(animateOpacity);
       }
     };
     
-    // 이전 애니메이션 중단
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
+    const animationId = requestAnimationFrame(animateOpacity);
     
-    // 새 애니메이션 시작
-    animationFrameRef.current = requestAnimationFrame(animate);
-  };
+    return () => {
+      cancelAnimationFrame(animationId);
+    };
+  }, [visibilityMap, fadeSpeed]);
   
   // 텍스처 패턴 SVG 정의
   const fogPatternSvg = `
@@ -251,13 +244,16 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
         <Layout size={{ x: 5, y: 5 }} flat={true} spacing={1.05} origin={{ x: 0, y: 0 }}>
           {hexMap.map((hex, index) => {
             const key = `${hex.q},${hex.r}`;
-            const visData = visibilityMapRef.current.get(key) || { 
-              status: 'hidden', 
-              opacity: 1 
-            };
+            const visData = visibilityMap.get(key);
             
-            // 완전히 가시적인 타일은 렌더링하지 않음
-            if (visData.status === 'visible' && visData.opacity < 0.1) {
+            // 시야 데이터가 없으면 기본값 사용
+            const status = visData?.status || 'hidden';
+            const opacity = visData?.opacity !== undefined ? visData.opacity : 
+                           (status === 'visible' ? 0 : 
+                            status === 'explored' ? 0.6 : 0.9);
+            
+            // 완전히 투명한 타일은 렌더링하지 않음 (최적화)
+            if (status === 'visible' && opacity < 0.05) {
               return null;
             }
             
@@ -266,12 +262,12 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
                 key={`fog-${index}`}
                 q={hex.q}
                 r={hex.r}
-                s={hex.s}
-                fill={visData.status === 'hidden' ? "url(#fog-pattern)" : "url(#dim-pattern)"}
-                fillOpacity={visData.opacity}
-                className={`transition-opacity duration-300 ${onTileClick ? 'cursor-pointer' : ''}`}
-                onClick={onTileClick ? () => onTileClick(hex) : undefined}
+                s={-hex.q-hex.r}
+                fill={status === 'hidden' ? "url(#fog-pattern)" : "url(#dim-pattern)"}
+                fillOpacity={opacity}
+                className="transition-opacity duration-300"
                 style={{ pointerEvents: onTileClick ? 'auto' : 'none' }}
+                onClick={onTileClick ? () => onTileClick(hex) : undefined}
               />
             );
           })}
@@ -281,4 +277,4 @@ const EnhancedFogOfWar: React.FC<FogOfWarProps> = ({
   );
 };
 
-export default EnhancedFogOfWar;
+export default FogOfWar;
