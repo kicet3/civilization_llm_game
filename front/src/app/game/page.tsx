@@ -2,15 +2,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { Menu, MessageSquare, Settings, Map, Book, Beaker, Users, Sword, Award, ChevronUp, ChevronDown, User, PanelLeft, Send, ZoomIn, ZoomOut, Move } from 'lucide-react';
+import { Menu, MessageSquare, Settings, Map, Book, Beaker, Users, Sword, Award, ChevronUp, ChevronDown, User, PanelLeft, Send, ZoomIn, ZoomOut, Move, Home } from 'lucide-react';
 import './hex-map.css'; 
 
 export default function GamePage() {
   const [turn, setTurn] = useState(1);
   const [year, setYear] = useState(-4000);
-  const [mapSize] = useState({ width: 30, height: 25 });
+  const [mapSize] = useState({ width: 15, height: 12 }); // 육각형 타일에 맞게 크기 조정
   const [mapTiles, setMapTiles] = useState([]);
   const [selectedTab, setSelectedTab] = useState('map');
+  const [selectedTile, setSelectedTile] = useState(null);
   const [resources, setResources] = useState({
     food: 12,
     production: 8,
@@ -38,13 +39,17 @@ export default function GamePage() {
 
   // 맵 생성
   useEffect(() => {
-    generateMap();
+    generateHexMap();
   }, []);
 
-  // 간단한 맵 생성 함수
-  const generateMap = () => {
-    const terrainTypes = ['grassland', 'plains', 'desert', 'tundra', 'mountain', 'ocean', 'forest', 'hills'];
+  // 육각형 타일 맵 생성 함수
+  const generateHexMap = () => {
+    const terrainTypes = ['grassland', 'plains', 'desert', 'tundra', 'mountain', 'ocean', 'forest', 'hills', 'jungle'];
     const newMapTiles = [];
+    
+    // 육각형 타일의 중심점 위치를 계산하기 위한 상수
+    const hexHeight = 80; // 육각형 높이
+    const hexWidth = Math.sqrt(3)/2 * hexHeight; // 육각형 너비
     
     for (let y = 0; y < mapSize.height; y++) {
       for (let x = 0; x < mapSize.width; x++) {
@@ -58,9 +63,10 @@ export default function GamePage() {
           if (randIdx < 40) terrain = 'grassland';
           else if (randIdx < 65) terrain = 'plains';
           else if (randIdx < 75) terrain = 'forest';
-          else if (randIdx < 85) terrain = 'hills';
-          else if (randIdx < 90) terrain = 'desert';
-          else if (randIdx < 95) terrain = 'tundra';
+          else if (randIdx < 82) terrain = 'hills';
+          else if (randIdx < 88) terrain = 'desert';
+          else if (randIdx < 94) terrain = 'tundra';
+          else if (randIdx < 97) terrain = 'jungle';
           else terrain = 'mountain';
         }
         
@@ -72,13 +78,18 @@ export default function GamePage() {
           resource = resources[Math.floor(Math.random() * resources.length)];
         }
         
-        // 홀수 행에는 hex 타일을 오프셋하기 위해 좌표 조정
-        const offsetX = y % 2 === 1 ? 0.5 : 0;
+        // 육각형 그리드에서의 x, y 좌표 계산
+        // 짝수 행에서는 x좌표가 일반적인 그리드와 일치하지만,
+        // 홀수 행에서는 x좌표가 0.5칸 오른쪽으로 오프셋 됨
+        const posX = x * hexWidth + (y % 2) * (hexWidth / 2);
+        const posY = y * (hexHeight * 0.75);
         
         newMapTiles.push({
-          x,
-          y,
-          offsetX,
+          id: `${x}-${y}`,
+          gridX: x,
+          gridY: y,
+          x: posX,
+          y: posY,
           terrain,
           resource,
           improvement: null,
@@ -182,19 +193,10 @@ export default function GamePage() {
     setCommandInput('');
   };
 
-  // 타일 색상 가져오기
-  const getTileColor = (terrain) => {
-    switch (terrain) {
-      case 'grassland': return 'bg-green-600';
-      case 'plains': return 'bg-yellow-600';
-      case 'desert': return 'bg-yellow-300';
-      case 'tundra': return 'bg-gray-300';
-      case 'mountain': return 'bg-gray-600';
-      case 'ocean': return 'bg-blue-500';
-      case 'forest': return 'bg-green-800';
-      case 'hills': return 'bg-green-700';
-      default: return 'bg-gray-400';
-    }
+  // 타일 선택 처리
+  const handleTileClick = (tile) => {
+    setSelectedTile(tile.id === selectedTile ? null : tile.id);
+    setInfoPanel({ open: true, type: 'tile', data: tile });
   };
 
   // 지도 드래그 시작
@@ -291,87 +293,75 @@ export default function GamePage() {
             onTouchEnd={handleMapDragEnd}
           >
             {/* 지도 컨트롤 버튼 */}
-            <div className="absolute top-2 right-2 z-10 flex flex-col space-y-2">
+            <div className="map-controls">
               <button 
-                className="bg-slate-700 p-2 rounded hover:bg-slate-600"
+                className="control-button"
                 onClick={() => handleZoom(1.2)}
               >
                 <ZoomIn size={20} />
               </button>
               <button 
-                className="bg-slate-700 p-2 rounded hover:bg-slate-600"
+                className="control-button"
                 onClick={() => handleZoom(0.8)}
               >
                 <ZoomOut size={20} />
               </button>
               <button 
-                className="bg-slate-700 p-2 rounded hover:bg-slate-600"
+                className="control-button"
                 onClick={centerMap}
               >
-                <Move size={20} />
+                <Home size={20} />
               </button>
             </div>
             
             {/* 육각형 타일 지도 */}
             <div 
-              className="absolute"
+              className="hex-grid absolute"
               style={{ 
                 transform: `translate(${mapTransform.x}px, ${mapTransform.y}px) scale(${mapTransform.scale})`,
                 transformOrigin: 'center',
                 transition: isDragging ? 'none' : 'transform 0.1s ease-out'
               }}
             >
-              {mapTiles.map((tile, index) => {
-                // 육각형 타일 크기 및 간격 설정
-                const hexSize = 40; // 육각형 크기
-                const hexHeight = hexSize * 2;
-                const hexWidth = Math.sqrt(3) * hexSize;
-                
-                // 홀수 행은 X축으로 오프셋
-                const xPos = tile.x * hexWidth + (tile.y % 2 === 1 ? hexWidth / 2 : 0);
-                const yPos = tile.y * (hexHeight * 0.75);
-                
-                return (
-                  <div 
-                    key={index}
-                    className={cn(
-                      "absolute cursor-pointer",
-                      getTileColor(tile.terrain)
-                    )}
-                    style={{
-                      width: `${hexWidth}px`,
-                      height: `${hexHeight}px`,
-                      clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-                      left: `${xPos - (mapSize.width * hexWidth / 2)}px`,
-                      top: `${yPos - (mapSize.height * hexHeight * 0.75 / 2)}px`,
-                    }}
-                    onClick={() => setInfoPanel({ open: true, type: 'tile', data: tile })}
-                  >
-                    {/* 유닛 */}
-                    {tile.unit && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-1/2 h-1/2 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                          {tile.unit === 'settler' && <User size={14} className="text-white" />}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* 도시 */}
-                    {tile.city && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-3/4 h-3/4 bg-red-600 bg-opacity-40 rounded-full flex items-center justify-center">
-                          <div className="bg-red-700 rounded-full w-1/2 h-1/2 border-2 border-white"></div>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* 자원 */}
-                    {tile.resource && (
-                      <div className="absolute bottom-1 right-1 w-3 h-3 bg-white rounded-full"></div>
-                    )}
-                  </div>
-                );
-              })}
+              {mapTiles.map((tile) => (
+                <div 
+                  key={tile.id}
+                  className={cn(
+                    "hex-tile",
+                    `terrain-${tile.terrain}`,
+                    selectedTile === tile.id && "selected"
+                  )}
+                  style={{
+                    left: `${tile.x - (mapSize.width * 40)}px`,
+                    top: `${tile.y - (mapSize.height * 60)}px`,
+                  }}
+                  onClick={() => handleTileClick(tile)}
+                >
+                  {/* 유닛 */}
+                  {tile.unit && (
+                    <div className="unit-marker">
+                      {tile.unit === 'settler' && <User size={14} className="text-white" />}
+                    </div>
+                  )}
+                  
+                  {/* 도시 */}
+                  {tile.city && (
+                    <div className="city-marker">
+                      <div className="bg-red-700 rounded-full w-1/2 h-1/2 border-2 border-white"></div>
+                    </div>
+                  )}
+                  
+                  {/* 자원 */}
+                  {tile.resource && (
+                    <div className="resource-marker"></div>
+                  )}
+                  
+                  {/* 타일 좌표 (디버그용) */}
+                  {/* <div className="text-xs font-bold text-center text-white drop-shadow-md">
+                    {tile.gridX},{tile.gridY}
+                  </div> */}
+                </div>
+              ))}
             </div>
           </div>
         );
@@ -627,7 +617,7 @@ export default function GamePage() {
                       </button>
                     </div>
                     <div className="text-sm space-y-1">
-                      <p>위치: ({infoPanel.data.x}, {infoPanel.data.y})</p>
+                      <p>위치: ({infoPanel.data.gridX}, {infoPanel.data.gridY})</p>
                       <p>지형: {infoPanel.data.terrain}</p>
                       {infoPanel.data.resource && <p>자원: {infoPanel.data.resource}</p>}
                       {infoPanel.data.improvement && <p>개발: {infoPanel.data.improvement}</p>}
