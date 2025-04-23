@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { HexGrid, Layout, Hexagon, Text } from 'react-hexgrid';
 import { cn } from '@/lib/utils';
 import { 
   Menu, MessageSquare, Settings, Map, Book, 
@@ -11,15 +11,62 @@ import {
   ZoomIn, ZoomOut, Move, Home 
 } from 'lucide-react';
 
+// 동적 임포트로 성능 개선
+const HexGrid = dynamic(() => import('react-hexgrid').then(mod => mod.HexGrid), { ssr: false });
+const Layout = dynamic(() => import('react-hexgrid').then(mod => mod.Layout), { ssr: false });
+const Hexagon = dynamic(() => import('react-hexgrid').then(mod => mod.Hexagon), { ssr: false });
+const Text = dynamic(() => import('react-hexgrid').then(mod => mod.Text), { ssr: false });
+
+// 타입 정의
+interface Hexagon {
+  q: number;
+  r: number;
+  s: number;
+  terrain: string;
+  resource?: string | null;
+  city?: { name: string; population: number } | null;
+  unit?: string | null;
+}
+
+interface Resource {
+  food: number;
+  production: number;
+  gold: number;
+  science: number;
+  culture: number;
+  faith: number;
+}
+
+interface City {
+  id: number;
+  name: string;
+  population: number;
+  production: string;
+  turnsLeft: number;
+}
+
+interface LogEntry {
+  type: 'system' | 'advisor' | 'event' | 'player';
+  content: string;
+  turn: number;
+}
+
+interface InfoPanel {
+  open: boolean;
+  type: 'tile' | null;
+  data: Hexagon | null;
+}
+
 export default function GamePage() {
   const router = useRouter();
-  const [turn, setTurn] = useState(1);
-  const [year, setYear] = useState(-4000);
-  const [mapSize] = useState({ width: 15, height: 12 });
-  const [hexagons, setHexagons] = useState([]);
-  const [selectedTab, setSelectedTab] = useState('map');
-  const [selectedHex, setSelectedHex] = useState(null);
-  const [resources, setResources] = useState({
+  
+  // 상태 최적화
+  const [turn, setTurn] = useState<number>(1);
+  const [year, setYear] = useState<number>(-4000);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [selectedTab, setSelectedTab] = useState<string>('map');
+  const [selectedHex, setSelectedHex] = useState<Hexagon | null>(null);
+  const [resources, setResources] = useState<Resource>({
     food: 12,
     production: 8,
     gold: 50,
@@ -27,38 +74,49 @@ export default function GamePage() {
     culture: 2,
     faith: 1
   });
-  const [cities, setCities] = useState([
+  const [cities, setCities] = useState<City[]>([
     { id: 1, name: '수도', population: 3, production: '정착민', turnsLeft: 2 }
   ]);
-  const [log, setLog] = useState([
+  const [log, setLog] = useState<LogEntry[]>([
     { type: 'system', content: '게임이 시작되었습니다.', turn: 1 },
     { type: 'advisor', content: '새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.', turn: 1 },
     { type: 'advisor', content: '우선 정착민을 생산하여 새로운 도시를 건설하는 것이 좋을 것 같습니다.', turn: 1 }
   ]);
-  const [commandInput, setCommandInput] = useState('');
-  const [infoPanel, setInfoPanel] = useState({ open: false, type: null, data: null });
+  const [commandInput, setCommandInput] = useState<string>('');
+  const [infoPanel, setInfoPanel] = useState<InfoPanel>({ 
+    open: false, 
+    type: null, 
+    data: null 
+  });
 
-  // 육각형 지도 생성
   useEffect(() => {
+    // 초기 데이터 로딩 시뮬레이션
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // useMemo를 사용해 불필요한 재계산 방지
+  const mapSize = useMemo(() => ({ width: 15, height: 12 }), []);
+  
+  // 성능 개선을 위한 hexagons 생성 로직 최적화
+  const hexagons = useMemo(() => {
     const terrainTypes = ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'];
-    const newHexagons = [];
+    const newHexagons: Hexagon[] = [];
     
     for (let q = 0; q < mapSize.width; q++) {
       for (let r = 0; r < mapSize.height; r++) {
         const s = -(q + r);
         
-        // 지형 랜덤 선택
         const terrain = terrainTypes[Math.floor(Math.random() * terrainTypes.length)];
         
-        // 자원 추가 (10% 확률)
         const hasResource = Math.random() < 0.1;
-        let resource = null;
-        if (hasResource) {
-          const resources = ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'];
-          resource = resources[Math.floor(Math.random() * resources.length)];
-        }
+        const resource = hasResource 
+          ? ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'][Math.floor(Math.random() * 6)]
+          : null;
 
-        // 시작 위치에 도시와 정착민 배치
         const isCapital = q === Math.floor(mapSize.width / 2) && r === Math.floor(mapSize.height / 2);
         
         newHexagons.push({
@@ -71,11 +129,11 @@ export default function GamePage() {
       }
     }
     
-    setHexagons(newHexagons);
-  }, []);
+    return newHexagons;
+  }, [mapSize]);
 
   // 육각형 색상 매핑
-  const getHexColor = (terrain) => {
+  const getHexColor = (terrain: string) => {
     switch (terrain) {
       case 'grassland': return 'green';
       case 'plains': return 'yellow';
@@ -125,12 +183,12 @@ export default function GamePage() {
   };
 
   // 게임 로그 추가
-  const addLog = (type, content, turn) => {
+  const addLog = (type: LogEntry['type'], content: string, turn: number) => {
     setLog(prev => [...prev, { type, content, turn }]);
   };
 
   // 명령어 처리
-  const handleCommand = (e) => {
+  const handleCommand = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!commandInput.trim()) return;
     
@@ -167,8 +225,17 @@ export default function GamePage() {
     setCommandInput('');
   };
 
+  // 로딩 중 화면
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-white text-2xl">게임 로딩 중...</div>
+      </div>
+    );
+  }
+
   // 육각형 클릭 핸들러
-  const handleHexClick = (hex) => {
+  const handleHexClick = (hex: Hexagon) => {
     setSelectedHex(hex);
     setInfoPanel({ 
       open: true, 
