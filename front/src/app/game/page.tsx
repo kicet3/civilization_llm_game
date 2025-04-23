@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import dynamic from 'next/dynamic';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { HexGrid, Layout, Hexagon, Text } from 'react-hexgrid';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { 
@@ -10,12 +10,6 @@ import {
   ChevronDown, User, PanelLeft, Send, 
   ZoomIn, ZoomOut, Move, Home 
 } from 'lucide-react';
-
-// 동적 임포트로 성능 개선
-const HexGrid = dynamic(() => import('react-hexgrid').then(mod => mod.HexGrid), { ssr: false });
-const Layout = dynamic(() => import('react-hexgrid').then(mod => mod.Layout), { ssr: false });
-const Hexagon = dynamic(() => import('react-hexgrid').then(mod => mod.Hexagon), { ssr: false });
-const Text = dynamic(() => import('react-hexgrid').then(mod => mod.Text), { ssr: false });
 
 // 타입 정의
 interface Hexagon {
@@ -57,10 +51,276 @@ interface InfoPanel {
   data: Hexagon | null;
 }
 
+// ResourceBar: Top resource display
+function ResourceBar({ resources }: { resources: Resource }) {
+  const icons = [
+    { color: 'bg-yellow-400', value: resources.food },
+    { color: 'bg-red-500', value: resources.production },
+    { color: 'bg-yellow-600', value: resources.gold },
+    { color: 'bg-blue-500', value: resources.science },
+    { color: 'bg-purple-500', value: resources.culture },
+    { color: 'bg-white', value: resources.faith },
+  ];
+  return (
+    <div className="bg-slate-800 p-1 flex justify-center space-x-6 text-sm border-b border-slate-700">
+      {icons.map((icon, idx) => (
+        <div key={idx} className="flex items-center">
+          <div className={`w-4 h-4 ${icon.color} rounded-full mr-1`}></div>
+          <span>{icon.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// TabNavigation: Left tab bar
+function TabNavigation({ selectedTab, setSelectedTab }: { selectedTab: string, setSelectedTab: (tab: string) => void }) {
+  const tabs = [
+    { key: 'map', icon: <Map size={24} /> },
+    { key: 'cities', icon: <Book size={24} /> },
+    { key: 'research', icon: <Beaker size={24} /> },
+    { key: 'units', icon: <Sword size={24} /> },
+  ];
+  return (
+    <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
+      {tabs.map(tab => (
+        <button
+          key={tab.key}
+          className={cn(
+            "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+            selectedTab === tab.key ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+          )}
+          onClick={() => setSelectedTab(tab.key)}
+        >
+          {tab.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// MapPanel: Hex grid map
+function MapPanel({ hexGridError, isHexGridLoaded, hexagons, getHexColor, handleHexClick, selectedHex }: any) {
+  if (hexGridError) {
+    return <div className="text-red-500 p-4">지도를 로드할 수 없습니다. 다시 시도해 주세요.</div>;
+  }
+  if (!isHexGridLoaded) {
+    return <div className="flex items-center justify-center h-full text-white">지도를 로딩 중입니다...</div>;
+  }
+  // 타일 크기 약간 축소
+  return (
+    <div className="relative w-full h-[30vh] overflow-hidden">
+      <HexGrid width="100%" height="100%" viewBox="-50 -50 100 100">
+        <Layout 
+          size={{ x: 7, y: 7 }} 
+          flat 
+          spacing={1.1} 
+          origin={{ x: 0, y: 0 }} 
+          className="w-full h-full"
+        >
+          {hexagons.map((hex: Hexagon, idx: number) => (
+            <Hexagon
+              key={idx}
+              q={hex.q}
+              r={hex.r}
+              s={hex.s}
+              fill={getHexColor(hex.terrain)}
+              onClick={() => handleHexClick(hex)}
+              className={cn(
+                "transition-all duration-200 hover:opacity-80",
+                selectedHex === hex ? "border-2 border-white" : ""
+              )}
+            >
+              {hex.city && <Text className="text-white text-xs">{hex.city.name}</Text>}
+              {hex.unit && <Text className="text-white text-xs">settlers</Text>}
+              {hex.resource && <Text className="text-white text-xs">{hex.resource}</Text>}
+            </Hexagon>
+          ))}
+        </Layout>
+      </HexGrid>
+    </div>
+  );
+}
+
+// CityList: Cities tab
+function CityList({ cities }: { cities: City[] }) {
+  return (
+    <div className="p-4 h-full overflow-auto">
+      <h3 className="text-xl font-bold mb-4">도시 관리</h3>
+      <div className="space-y-4">
+        {cities.map(city => (
+          <div key={city.id} className="bg-gray-800 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="text-lg font-bold">{city.name}</h4>
+              <span className="text-sm px-2 py-1 bg-blue-900 rounded-full">인구: {city.population}</span>
+            </div>
+            <div className="text-gray-300 text-sm mb-3">
+              <p>생산: {city.production} ({city.turnsLeft}턴 남음)</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-gray-700 p-2 rounded"><p>식량: +5/턴</p></div>
+              <div className="bg-gray-700 p-2 rounded"><p>생산력: +4/턴</p></div>
+              <div className="bg-gray-700 p-2 rounded"><p>금: +3/턴</p></div>
+              <div className="bg-gray-700 p-2 rounded"><p>과학: +2/턴</p></div>
+              <div className="bg-gray-700 p-2 rounded"><p>문화: +1/턴</p></div>
+              <div className="bg-gray-700 p-2 rounded"><p>신앙: +1/턴</p></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ResearchPanel: Research tab
+function ResearchPanel() {
+  return (
+    <div className="p-4 h-full overflow-auto">
+      <h3 className="text-xl font-bold mb-4">연구</h3>
+      <div className="bg-gray-800 rounded-lg p-4 mb-4">
+        <h4 className="text-lg font-bold mb-2">현재 연구: 농업</h4>
+        <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden">
+          <div className="bg-blue-600 h-full" style={{ width: '60%' }}></div>
+        </div>
+        <p className="text-right text-sm mt-1">2턴 남음</p>
+      </div>
+      <div className="space-y-3">
+        <h4 className="font-bold">다음 가능한 연구:</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">도자기</h5><p className="text-xs text-gray-400">4턴 소요</p></div>
+          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">동물 사육</h5><p className="text-xs text-gray-400">4턴 소요</p></div>
+          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">채광</h5><p className="text-xs text-gray-400">5턴 소요</p></div>
+          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">범선</h5><p className="text-xs text-gray-400">6턴 소요</p></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// UnitsPanel: Units tab
+function UnitsPanel() {
+  return (
+    <div className="p-4 h-full overflow-auto">
+      <h3 className="text-xl font-bold mb-4">유닛</h3>
+      <div className="space-y-4">
+        <div className="bg-gray-800 rounded-lg p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="text-lg font-bold">정착민</h4>
+            <span className="text-sm px-2 py-1 bg-blue-900 rounded-full">민간 유닛</span>
+          </div>
+          <div className="text-gray-300 text-sm mb-3">
+            <p>위치: 수도 인근</p>
+            <p>이동력: 2/2</p>
+          </div>
+          <div className="flex space-x-2">
+            <button className="bg-blue-600 px-3 py-1 rounded text-sm">이동</button>
+            <button className="bg-green-600 px-3 py-1 rounded text-sm">도시 건설</button>
+          </div>
+        </div>
+        <div className="bg-gray-800 rounded-lg p-4">
+          <div className="flex justify-between items-center mb-2">
+            <h4 className="text-lg font-bold">전사</h4>
+            <span className="text-sm px-2 py-1 bg-red-900 rounded-full">군사 유닛</span>
+          </div>
+          <div className="text-gray-300 text-sm mb-3">
+            <p>위치: 수도</p>
+            <p>이동력: 2/2</p>
+            <p>체력: 20/20</p>
+          </div>
+          <div className="flex space-x-2">
+            <button className="bg-blue-600 px-3 py-1 rounded text-sm">이동</button>
+            <button className="bg-red-600 px-3 py-1 rounded text-sm">경계</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// InfoPanel: Tile/city/unit info
+function InfoPanelComponent({ infoPanel, setInfoPanel }: { infoPanel: InfoPanel, setInfoPanel: any }) {
+  if (!infoPanel.open || !infoPanel.data) return null;
+  return (
+    <div className="bg-slate-700 p-3 rounded">
+      <div className="flex justify-between mb-2">
+        <h4 className="font-bold">타일 정보</h4>
+        <button onClick={() => setInfoPanel({ open: false, type: null, data: null })}>✕</button>
+      </div>
+      <div className="text-sm space-y-1">
+        <p>위치: ({infoPanel.data.q}, {infoPanel.data.r})</p>
+        <p>지형: {infoPanel.data.terrain}</p>
+        {infoPanel.data.resource && <p>자원: {infoPanel.data.resource}</p>}
+        {infoPanel.data.city && <p>도시: {infoPanel.data.city.name} (인구: {infoPanel.data.city.population})</p>}
+        {infoPanel.data.unit && <p>유닛: {infoPanel.data.unit}</p>}
+      </div>
+      {infoPanel.data.unit && (
+        <div className="mt-3 space-x-2">
+          <button className="bg-blue-600 text-xs px-2 py-1 rounded">이동</button>
+          {infoPanel.data.unit === 'settler' && (
+            <button className="bg-green-600 text-xs px-2 py-1 rounded">도시 건설</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// LogPanel: Game log and command input
+function LogPanel({ log, infoPanel, setInfoPanel, commandInput, setCommandInput, handleCommand }: any) {
+  return (
+    <div className="h-1/3 bg-slate-800 border-t border-slate-700 flex">
+      {/* 로그 영역 */}
+      <div className="flex-1 p-3 flex flex-col-reverse h-full">
+        <div className="space-y-3 h-full max-h-[40vh] overflow-y-auto flex flex-col-reverse">
+          {log.slice().reverse().map((entry: LogEntry, idx: number) => (
+            <div key={idx} className={cn(
+              "p-2 rounded",
+              entry.type === 'system' ? 'bg-slate-700 text-gray-300' :
+              entry.type === 'advisor' ? 'bg-indigo-900' :
+              entry.type === 'event' ? 'bg-amber-900' : 'bg-slate-600'
+            )}>
+              <div className="flex items-start">
+                <div className="text-sm">
+                  {entry.type === 'system' && '시스템: '}
+                  {entry.type === 'advisor' && '조언자: '}
+                  {entry.type === 'event' && '이벤트: '}
+                  {entry.type === 'player' && '명령: '}
+                  {entry.content}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* 명령 입력 영역 */}
+      <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
+        <div className="flex-1 overflow-auto mb-3">
+          <InfoPanelComponent infoPanel={infoPanel} setInfoPanel={setInfoPanel} />
+        </div>
+        <form onSubmit={handleCommand} className="flex">
+          <input
+            type="text"
+            value={commandInput}
+            onChange={(e) => setCommandInput(e.target.value)}
+            placeholder="명령을 입력하세요..."
+            className="flex-1 bg-slate-700 rounded-l p-2 focus:outline-none"
+          />
+          <button 
+            type="submit"
+            className="bg-indigo-600 hover:bg-indigo-700 px-4 rounded-r flex items-center"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function GamePage() {
   const router = useRouter();
   
-  // 상태 최적화
+  // 상태 관리
   const [turn, setTurn] = useState<number>(1);
   const [year, setYear] = useState<number>(-4000);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -88,20 +348,32 @@ export default function GamePage() {
     type: null, 
     data: null 
   });
-
+  const [isHexGridLoaded, setIsHexGridLoaded] = useState(false);
+  const [hexGridError, setHexGridError] = useState<Error | null>(null);
+  const addLog = useCallback((type: LogEntry['type'], content: string, turn: number) => {
+    setLog(prev => [...prev, { type, content, turn }]);
+  }, []);
+  // 초기 로딩 및 라이브러리 로드 확인
   useEffect(() => {
     // 초기 데이터 로딩 시뮬레이션
-    const timer = setTimeout(() => {
+    const loadTimer = setTimeout(() => {
       setIsLoading(false);
     }, 1000);
 
-    return () => clearTimeout(timer);
+    // HexGrid 라이브러리 로드 확인
+    if (typeof window !== 'undefined') {
+      setIsHexGridLoaded(true);
+    }
+
+    return () => {
+      clearTimeout(loadTimer);
+    };
   }, []);
 
-  // useMemo를 사용해 불필요한 재계산 방지
+  // 맵 설정
   const mapSize = useMemo(() => ({ width: 15, height: 12 }), []);
   
-  // 성능 개선을 위한 hexagons 생성 로직 최적화
+  // 성능 최적화된 hexagons 생성 로직
   const hexagons = useMemo(() => {
     const terrainTypes = ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'];
     const newHexagons: Hexagon[] = [];
@@ -133,7 +405,7 @@ export default function GamePage() {
   }, [mapSize]);
 
   // 육각형 색상 매핑
-  const getHexColor = (terrain: string) => {
+  const getHexColor = useCallback((terrain: string) => {
     switch (terrain) {
       case 'grassland': return 'green';
       case 'plains': return 'yellow';
@@ -144,10 +416,20 @@ export default function GamePage() {
       case 'hills': return 'lightgreen';
       default: return 'gray';
     }
-  };
+  }, []);
+
+  // 육각형 클릭 핸들러
+  const handleHexClick = useCallback((hex: Hexagon) => {
+    setSelectedHex(hex);
+    setInfoPanel({ 
+      open: true, 
+      type: 'tile', 
+      data: hex 
+    });
+  }, []);
 
   // 턴 진행
-  const nextTurn = () => {
+  const nextTurn = useCallback(() => {
     const newTurn = turn + 1;
     setTurn(newTurn);
     
@@ -180,15 +462,13 @@ export default function GamePage() {
       culture: prev.culture + 1,
       faith: prev.faith + 1
     }));
-  };
+  }, [turn, year, addLog]);
 
   // 게임 로그 추가
-  const addLog = (type: LogEntry['type'], content: string, turn: number) => {
-    setLog(prev => [...prev, { type, content, turn }]);
-  };
+  
 
   // 명령어 처리
-  const handleCommand = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleCommand = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!commandInput.trim()) return;
     
@@ -223,7 +503,7 @@ export default function GamePage() {
     }
     
     setCommandInput('');
-  };
+  }, [commandInput, turn, resources, addLog, nextTurn]);
 
   // 로딩 중 화면
   if (isLoading) {
@@ -234,166 +514,19 @@ export default function GamePage() {
     );
   }
 
-  // 육각형 클릭 핸들러
-  const handleHexClick = (hex: Hexagon) => {
-    setSelectedHex(hex);
-    setInfoPanel({ 
-      open: true, 
-      type: 'tile', 
-      data: hex 
-    });
-  };
-
-  // 탭 컨텐츠 렌더링
-  const renderTabContent = () => {
-    switch (selectedTab) {
-      case 'map':
-        return (
-          <div className="flex-1 relative overflow-hidden">
-            <HexGrid width={1200} height={800}>
-              <Layout 
-                size={{ x: 30, y: 30 }} 
-                flat={false} 
-                spacing={1.1} 
-                origin={{ x: 0, y: 0 }}
-              >
-                {hexagons.map((hex, index) => (
-                  <Hexagon 
-                    key={index} 
-                    q={hex.q} 
-                    r={hex.r} 
-                    s={hex.s}
-                    fill={getHexColor(hex.terrain)}
-                    onClick={() => handleHexClick(hex)}
-                    className={cn(
-                      "transition-all duration-200 hover:opacity-80",
-                      selectedHex === hex ? "border-2 border-white" : ""
-                    )}
-                  >
-                    {hex.city && (
-                      <Text className="text-white text-xs">{hex.city.name}</Text>
-                    )}
-                    {hex.unit && (
-                      <Text className="text-white text-xs">settlers</Text>
-                    )}
-                    {hex.resource && (
-                      <Text className="text-white text-xs">{hex.resource}</Text>
-                    )}
-                  </Hexagon>
-                ))}
-              </Layout>
-            </HexGrid>
-          </div>
-        );
-      case 'cities':
-        return (
-          <div className="p-4 h-full overflow-auto">
-            <h3 className="text-xl font-bold mb-4">도시 관리</h3>
-            <div className="space-y-4">
-              {cities.map(city => (
-                <div key={city.id} className="bg-gray-800 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <h4 className="text-lg font-bold">{city.name}</h4>
-                    <span className="text-sm px-2 py-1 bg-blue-900 rounded-full">인구: {city.population}</span>
-                  </div>
-                  <div className="text-gray-300 text-sm mb-3">
-                    <p>생산: {city.production} ({city.turnsLeft}턴 남음)</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="bg-gray-700 p-2 rounded">
-                      <p>식량: +5/턴</p>
-                    </div>
-                    <div className="bg-gray-700 p-2 rounded">
-                      <p>생산력: +4/턴</p>
-                    </div>
-                    <div className="bg-gray-700 p-2 rounded">
-                      <p>금: +3/턴</p>
-                    </div>
-                    <div className="bg-gray-700 p-2 rounded">
-                      <p>과학: +2/턴</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      case 'research':
-        return (
-          <div className="p-4 h-full overflow-auto">
-            <h3 className="text-xl font-bold mb-4">연구</h3>
-            <div className="bg-gray-800 rounded-lg p-4 mb-4">
-              <h4 className="text-lg font-bold mb-2">현재 연구: 농업</h4>
-              <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden">
-                <div className="bg-blue-600 h-full" style={{ width: '60%' }}></div>
-              </div>
-              <p className="text-right text-sm mt-1">2턴 남음</p>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="font-bold">다음 가능한 연구:</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700">
-                  <h5 className="font-bold">도자기</h5>
-                  <p className="text-xs text-gray-400">4턴 소요</p>
-                </div>
-                <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700">
-                  <h5 className="font-bold">동물 사육</h5>
-                  <p className="text-xs text-gray-400">4턴 소요</p>
-                </div>
-                <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700">
-                  <h5 className="font-bold">채광</h5>
-                  <p className="text-xs text-gray-400">5턴 소요</p>
-                </div>
-                <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700">
-                  <h5 className="font-bold">범선</h5>
-                  <p className="text-xs text-gray-400">6턴 소요</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      case 'units':
-        return (
-          <div className="p-4 h-full overflow-auto">
-            <h3 className="text-xl font-bold mb-4">유닛</h3>
-            <div className="space-y-4">
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-lg font-bold">정착민</h4>
-                  <span className="text-sm px-2 py-1 bg-blue-900 rounded-full">민간 유닛</span>
-                </div>
-                <div className="text-gray-300 text-sm mb-3">
-                  <p>위치: 수도 인근</p>
-                  <p>이동력: 2/2</p>
-                </div>
-                <div className="flex space-x-2">
-                  <button className="bg-blue-600 px-3 py-1 rounded text-sm">이동</button>
-                  <button className="bg-green-600 px-3 py-1 rounded text-sm">도시 건설</button>
-                </div>
-              </div>
-              <div className="bg-gray-800 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-lg font-bold">전사</h4>
-                  <span className="text-sm px-2 py-1 bg-red-900 rounded-full">군사 유닛</span>
-                </div>
-                <div className="text-gray-300 text-sm mb-3">
-                  <p>위치: 수도</p>
-                  <p>이동력: 2/2</p>
-                  <p>체력: 20/20</p>
-                </div>
-                <div className="flex space-x-2">
-                  <button className="bg-blue-600 px-3 py-1 rounded text-sm">이동</button>
-                  <button className="bg-red-600 px-3 py-1 rounded text-sm">경계</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      default:
-        return <div>선택된 탭이 없습니다</div>;
-    }
-  };
+  // 탭 컨텐츠 렌더링 (modularized)
+  let tabContent;
+  if (selectedTab === 'map') {
+    tabContent = <MapPanel hexGridError={hexGridError} isHexGridLoaded={isHexGridLoaded} hexagons={hexagons} getHexColor={getHexColor} handleHexClick={handleHexClick} selectedHex={selectedHex} />;
+  } else if (selectedTab === 'cities') {
+    tabContent = <CityList cities={cities} />;
+  } else if (selectedTab === 'research') {
+    tabContent = <ResearchPanel />;
+  } else if (selectedTab === 'units') {
+    tabContent = <UnitsPanel />;
+  } else {
+    tabContent = <div>선택된 탭이 없습니다</div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col">
@@ -421,155 +554,28 @@ export default function GamePage() {
           <Settings className="ml-2" size={20} />
         </div>
       </nav>
-      
       {/* 주요 자원 표시 */}
-      <div className="bg-slate-800 p-1 flex justify-center space-x-6 text-sm border-b border-slate-700">
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-yellow-400 rounded-full mr-1"></div>
-          <span>{resources.food}</span>
-        </div>
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-red-500 rounded-full mr-1"></div>
-          <span>{resources.production}</span>
-        </div>
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-yellow-600 rounded-full mr-1"></div>
-          <span>{resources.gold}</span>
-        </div>
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-blue-500 rounded-full mr-1"></div>
-          <span>{resources.science}</span>
-        </div>
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-purple-500 rounded-full mr-1"></div>
-          <span>{resources.culture}</span>
-        </div>
-        <div className="flex items-center">
-          <div className="w-4 h-4 bg-white rounded-full mr-1"></div>
-          <span>{resources.faith}</span>
-        </div>
-      </div>
-      
+      <ResourceBar resources={resources} />
       {/* 메인 콘텐츠 영역 */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0">
         {/* 탭 네비게이션 */}
-        <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
-          <button
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'map' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('map')}
-          >
-            <Map size={24} />
-          </button>
-          <button
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'cities' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('cities')}
-          >
-            <Book size={24} />
-          </button>
-          <button
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'research' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('research')}
-          >
-            <Beaker size={24} />
-          </button>
-          <button
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'units' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('units')}
-          >
-            <Sword size={24} />
-          </button>
-        </div>
-        
+        <TabNavigation selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
         {/* 주요 콘텐츠 영역 */}
-        <div className="flex-1 h-full overflow-hidden flex flex-col">
-          {/* 탭 콘텐츠 */}
-          <div className="flex-1 overflow-hidden">
-            {renderTabContent()}
+        <div className="flex-1 h-full overflow-hidden flex flex-col min-h-0">
+          {/* 탭 콘텐츠 (맵 등) */}
+          <div className="flex-1 overflow-hidden min-h-0">
+            {tabContent}
           </div>
-          
-          {/* 하단 명령 및 로그 영역 */}
-          <div className="h-1/3 bg-slate-800 border-t border-slate-700 flex">
-            {/* 로그 영역 */}
-            <div className="flex-1 p-3 overflow-auto flex flex-col-reverse">
-              <div className="space-y-3">
-                {log.slice().reverse().map((entry, index) => (
-                  <div key={index} className={cn(
-                    "p-2 rounded",
-                    entry.type === 'system' ? 'bg-slate-700 text-gray-300' :
-                    entry.type === 'advisor' ? 'bg-indigo-900' :
-                    entry.type === 'event' ? 'bg-amber-900' : 'bg-slate-600'
-                  )}>
-                    <div className="flex items-start">
-                      <div className="text-sm">
-                        {entry.type === 'system' && '시스템: '}
-                        {entry.type === 'advisor' && '조언자: '}
-                        {entry.type === 'event' && '이벤트: '}
-                        {entry.type === 'player' && '명령: '}
-                        {entry.content}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* 명령 입력 영역 */}
-            <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
-              <div className="flex-1 overflow-auto mb-3">
-                {infoPanel.open && infoPanel.type === 'tile' && (
-                  <div className="bg-slate-700 p-3 rounded">
-                    <div className="flex justify-between mb-2">
-                      <h4 className="font-bold">타일 정보</h4>
-                      <button onClick={() => setInfoPanel({ open: false, type: null, data: null })}>
-                        ✕
-                      </button>
-                    </div>
-                    <div className="text-sm space-y-1">
-                      <p>위치: ({infoPanel.data.q}, {infoPanel.data.r})</p>
-                      <p>지형: {infoPanel.data.terrain}</p>
-                      {infoPanel.data.resource && <p>자원: {infoPanel.data.resource}</p>}
-                      {infoPanel.data.city && <p>도시: {infoPanel.data.city.name} (인구: {infoPanel.data.city.population})</p>}
-                      {infoPanel.data.unit && <p>유닛: {infoPanel.data.unit}</p>}
-                    </div>
-                    {infoPanel.data.unit && (
-                      <div className="mt-3 space-x-2">
-                        <button className="bg-blue-600 text-xs px-2 py-1 rounded">이동</button>
-                        {infoPanel.data.unit === 'settler' && (
-                          <button className="bg-green-600 text-xs px-2 py-1 rounded">도시 건설</button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-              <form onSubmit={handleCommand} className="flex">
-                <input
-                  type="text"
-                  value={commandInput}
-                  onChange={(e) => setCommandInput(e.target.value)}
-                  placeholder="명령을 입력하세요..."
-                  className="flex-1 bg-slate-700 rounded-l p-2 focus:outline-none"
-                />
-                <button 
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 px-4 rounded-r flex items-center"
-                >
-                  <Send size={16} />
-                </button>
-              </form>
-            </div>
+          {/* 하단 명령 및 로그 영역 (고정 25vh) */}
+          <div className="h-[25vh] min-h-[180px] max-h-[300px]">
+            <LogPanel 
+              log={log} 
+              infoPanel={infoPanel} 
+              setInfoPanel={setInfoPanel} 
+              commandInput={commandInput} 
+              setCommandInput={setCommandInput} 
+              handleCommand={handleCommand}
+            />
           </div>
         </div>
       </div>
