@@ -5,3 +5,5 @@
 *.next
 *.next/
 .python-version
+backend/prisma/migrations
+*__pycache__*
