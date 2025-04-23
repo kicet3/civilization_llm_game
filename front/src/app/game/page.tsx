@@ -156,8 +156,8 @@ function MapPanel({ hexagons, getHexColor, handleHexClick, selectedHex }: {
   return (
     <div className="w-full h-full">
       <HexGrid 
-        width="100%" 
-        height="100%" 
+        width="100vw" 
+        height="100vh" 
         viewBox={`${viewBoxOffset.x} ${viewBoxOffset.y} 100 100`}
       >
         <Layout 
@@ -572,7 +572,7 @@ export default function GamePage() {
   // 탭 컨텐츠 렌더링 (modularized)
   let tabContent;
   if (selectedTab === 'map') {
-    tabContent = <MapPanel hexGridError={hexGridError} isHexGridLoaded={isHexGridLoaded} hexagons={hexagons} getHexColor={getHexColor} handleHexClick={handleHexClick} selectedHex={selectedHex} />;
+    tabContent = <MapPanel hexagons={hexagons} getHexColor={getHexColor} handleHexClick={handleHexClick} selectedHex={selectedHex} />;
   } else if (selectedTab === 'cities') {
     tabContent = <CityList cities={cities} />;
   } else if (selectedTab === 'research') {
@@ -619,9 +619,9 @@ export default function GamePage() {
         <TabNavigation selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
         
         {/* 메인 콘텐츠 영역 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="h-[90vh] flex-1 flex flex-col overflow-hidden">
           {/* 상단 콘텐츠 영역 (고정된 높이) */}
-          <div className="flex-1 overflow-auto">
+          <div className="h-full flex-1 overflow-auto">
             {tabContent}
           </div>
           
