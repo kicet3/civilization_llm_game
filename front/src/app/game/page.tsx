@@ -268,7 +268,7 @@ function InfoPanelComponent({ infoPanel, setInfoPanel }: { infoPanel: InfoPanel,
 // LogPanel: Game log and command input
 function LogPanel({ log, infoPanel, setInfoPanel, commandInput, setCommandInput, handleCommand }: any) {
   return (
-    <div className="h-1/3 bg-slate-800 border-t border-slate-700 flex">
+    <div className="h-full bg-slate-800 border-t border-slate-700 flex">
       {/* 로그 영역 */}
       <div className="flex-1 p-3 flex flex-col-reverse h-full">
         <div className="space-y-3 h-full max-h-[40vh] overflow-y-auto flex flex-col-reverse">
@@ -554,20 +554,24 @@ export default function GamePage() {
           <Settings className="ml-2" size={20} />
         </div>
       </nav>
+      
       {/* 주요 자원 표시 */}
       <ResourceBar resources={resources} />
-      {/* 메인 콘텐츠 영역 */}
-      <div className="flex-1 flex min-h-0">
+      
+      {/* 메인 콘텐츠 영역 - 고정된 높이로 분할 */}
+      <div className="flex-1 flex overflow-hidden">
         {/* 탭 네비게이션 */}
         <TabNavigation selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
-        {/* 주요 콘텐츠 영역 */}
-        <div className="flex-1 h-full overflow-hidden flex flex-col min-h-0">
-          {/* 탭 콘텐츠 (맵 등) */}
-          <div className="flex-1 overflow-hidden min-h-0">
+        
+        {/* 메인 콘텐츠 영역 */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* 상단 콘텐츠 영역 (고정된 높이) */}
+          <div className="flex-1 overflow-auto">
             {tabContent}
           </div>
-          {/* 하단 명령 및 로그 영역 (고정 25vh) */}
-          <div className="h-[25vh] min-h-[180px] max-h-[300px]">
+          
+          {/* 로그 패널 (고정된 높이) */}
+          <div className="h-[20vh] min-h-[180px] max-h-[300px]">
             <LogPanel 
               log={log} 
               infoPanel={infoPanel} 
