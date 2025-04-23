@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { HexGrid, Layout, Hexagon, Text } from 'react-hexgrid';
+import { HexGrid, Layout, Hexagon, Text, GridGenerator } from 'react-hexgrid';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { 
@@ -10,7 +10,10 @@ import {
   ChevronDown, User, PanelLeft, Send, 
   ZoomIn, ZoomOut, Move, Home 
 } from 'lucide-react';
-
+import {  
+  Mountain, Trees, Waves, Globe, Sun, Leaf, 
+  Tent, Compass, Anchor 
+} from 'lucide-react';
 // 타입 정의
 interface Hexagon {
   q: number;
@@ -73,6 +76,9 @@ function ResourceBar({ resources }: { resources: Resource }) {
   );
 }
 
+
+
+
 // TabNavigation: Left tab bar
 function TabNavigation({ selectedTab, setSelectedTab }: { selectedTab: string, setSelectedTab: (tab: string) => void }) {
   const tabs = [
@@ -100,42 +106,103 @@ function TabNavigation({ selectedTab, setSelectedTab }: { selectedTab: string, s
 }
 
 // MapPanel: Hex grid map
-function MapPanel({ hexGridError, isHexGridLoaded, hexagons, getHexColor, handleHexClick, selectedHex }: any) {
-  if (hexGridError) {
-    return <div className="text-red-500 p-4">지도를 로드할 수 없습니다. 다시 시도해 주세요.</div>;
+function MapPanel({ hexagons, getHexColor, handleHexClick, selectedHex }: {
+  hexagons: Hexagon[], 
+  getHexColor: (terrain: string) => string, 
+  handleHexClick: (hex: Hexagon) => void, 
+  selectedHex: Hexagon | null
+}) {
+  // 뷰박스 오프셋 상태 추가
+  const [viewBoxOffset, setViewBoxOffset] = useState({ x: -50, y: -50 });
+
+  // 키보드 이벤트 처리
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      setViewBoxOffset((prev) => {
+        const step = 5; // 움직이는 거리
+        switch (e.key) {
+          case "ArrowUp": return { ...prev, y: prev.y - step };
+          case "ArrowDown": return { ...prev, y: prev.y + step };
+          case "ArrowLeft": return { ...prev, x: prev.x - step };
+          case "ArrowRight": return { ...prev, x: prev.x + step };
+          default: return prev;
+        }
+      });
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // 육각형 데이터가 없을 경우 처리
+  if (!hexagons || hexagons.length === 0) {
+    return <div className="text-red-500 p-4">지도 데이터를 로드할 수 없습니다.</div>;
   }
-  if (!isHexGridLoaded) {
-    return <div className="flex items-center justify-center h-full text-white">지도를 로딩 중입니다...</div>;
-  }
-  // 타일 크기 약간 축소
+
+  // 지형에 따른 아이콘 매핑
+  const getTerrainIcon = (terrain: string) => {
+    switch (terrain) {
+      case 'mountain': return Mountain;
+      case 'forest': return Trees;
+      case 'ocean': return Waves;
+      case 'plains': return Globe;
+      case 'desert': return Sun;
+      case 'grassland': return Leaf;
+      case 'hills': return Tent;
+      default: return Compass;
+    }
+  };
+
   return (
-    <div className="relative w-full h-[30vh] overflow-hidden">
-      <HexGrid width="100%" height="100%" viewBox="-50 -50 100 100">
+    <div className="w-full h-full">
+      <HexGrid 
+        width="100%" 
+        height="100%" 
+        viewBox={`${viewBoxOffset.x} ${viewBoxOffset.y} 100 100`}
+      >
         <Layout 
-          size={{ x: 7, y: 7 }} 
+          size={{ x: 4, y: 4 }}  // 크기 축소 
           flat 
-          spacing={1.1} 
-          origin={{ x: 0, y: 0 }} 
-          className="w-full h-full"
+          spacing={1.05}  // 간격 조정
+          origin={{ x: 0, y: 0 }}
         >
-          {hexagons.map((hex: Hexagon, idx: number) => (
-            <Hexagon
-              key={idx}
-              q={hex.q}
-              r={hex.r}
-              s={hex.s}
-              fill={getHexColor(hex.terrain)}
-              onClick={() => handleHexClick(hex)}
-              className={cn(
-                "transition-all duration-200 hover:opacity-80",
-                selectedHex === hex ? "border-2 border-white" : ""
-              )}
-            >
-              {hex.city && <Text className="text-white text-xs">{hex.city.name}</Text>}
-              {hex.unit && <Text className="text-white text-xs">settlers</Text>}
-              {hex.resource && <Text className="text-white text-xs">{hex.resource}</Text>}
-            </Hexagon>
-          ))}
+          {hexagons.map((hex, idx) => {
+            const TerrainIcon = getTerrainIcon(hex.terrain);
+            return (
+              <Hexagon
+                key={idx}
+                q={hex.q}
+                r={hex.r}
+                s={hex.s}
+                fill={getHexColor(hex.terrain)}
+                onClick={() => handleHexClick(hex)}
+                className={cn(
+                  "cursor-pointer hover:opacity-80",
+                  selectedHex === hex ? "stroke-2 stroke-white" : ""
+                )}
+              >
+                <foreignObject x="-2.5" y="-2.5" width="5" height="5">
+                  <div className="flex items-center justify-center w-full h-full">
+                    <TerrainIcon 
+                      size={16} 
+                      color="white" 
+                      strokeWidth={1.5}
+                    />
+                    {hex.resource && (
+                      <span className="absolute bottom-0 right-0 text-[0.5rem] text-white">
+                        {hex.resource.slice(0,2)}
+                      </span>
+                    )}
+                    {hex.city && (
+                      <span className="absolute top-0 left-0 text-[0.5rem] text-white">
+                        도
+                      </span>
+                    )}
+                  </div>
+                </foreignObject>
+              </Hexagon>
+            );
+          })}
         </Layout>
       </HexGrid>
     </div>
@@ -375,46 +442,34 @@ export default function GamePage() {
   
   // 성능 최적화된 hexagons 생성 로직
   const hexagons = useMemo(() => {
-    const terrainTypes = ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'];
-    const newHexagons: Hexagon[] = [];
+    // 더 큰 육각형 그리드 생성 (대략 300개 근접)
+    const generatedHexagons = GridGenerator.hexagon(12);
     
-    for (let q = 0; q < mapSize.width; q++) {
-      for (let r = 0; r < mapSize.height; r++) {
-        const s = -(q + r);
-        
-        const terrain = terrainTypes[Math.floor(Math.random() * terrainTypes.length)];
-        
-        const hasResource = Math.random() < 0.1;
-        const resource = hasResource 
-          ? ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'][Math.floor(Math.random() * 6)]
-          : null;
-
-        const isCapital = q === Math.floor(mapSize.width / 2) && r === Math.floor(mapSize.height / 2);
-        
-        newHexagons.push({
-          q, r, s,
-          terrain,
-          resource,
-          city: isCapital ? { name: '수도', population: 3 } : null,
-          unit: isCapital ? 'settler' : null
-        });
-      }
-    }
-    
-    return newHexagons;
-  }, [mapSize]);
-
-  // 육각형 색상 매핑
+    return generatedHexagons.map(hex => ({
+      ...hex,
+      terrain: ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'][
+        Math.floor(Math.random() * 7)
+      ],
+      resource: Math.random() < 0.1 
+        ? ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'][
+            Math.floor(Math.random() * 6)
+          ]
+        : null,
+      city: Math.random() < 0.05 ? { name: '도시', population: 3 } : null,
+      unit: Math.random() < 0.05 ? 'settler' : null
+    }));
+  }, []);
+  
   const getHexColor = useCallback((terrain: string) => {
     switch (terrain) {
-      case 'grassland': return 'green';
-      case 'plains': return 'yellow';
-      case 'desert': return 'orange';
-      case 'mountain': return 'gray';
-      case 'ocean': return 'blue';
-      case 'forest': return 'darkgreen';
-      case 'hills': return 'lightgreen';
-      default: return 'gray';
+      case 'grassland': return '#2ecc71';  // 밝은 녹색
+      case 'plains': return '#f1c40f';     // 노란색
+      case 'desert': return '#f39c12';     // 주황색
+      case 'mountain': return '#7f8c8d';   // 회색
+      case 'ocean': return '#3498db';      // 파란색
+      case 'forest': return '#27ae60';     // 진한 녹색
+      case 'hills': return '#2ecc71';      // 밝은 녹색
+      default: return '#34495e';           // 어두운 회색
     }
   }, []);
 
