@@ -5,8 +5,8 @@ import gameService, { HexTile, Unit } from "@/services/gameService";
 import { cn } from "@/lib/utils";
 import { 
   ZoomIn, ZoomOut, Compass, Home, RotateCcw,
-  RefreshCw, Eye, Trees, Mountain, Water,
-  Star, Flag, Tent, Shield
+  RefreshCw, Eye, Trees, Mountain,
+  Star, Flag, Tent, Shield, Droplet
 } from "lucide-react";
 import Toast from "../ui/Toast";
 
@@ -827,8 +827,8 @@ export default function ImprovedMapPanel({
           <div className="flex items-center text-sm font-bold mb-1">
             {hoveredTile.terrain === 'mountain' && <Mountain size={16} className="mr-1" />}
             {hoveredTile.terrain === 'forest' && <Trees size={16} className="mr-1" />}
-            {hoveredTile.terrain === 'ocean' && <Water size={16} className="mr-1" />}
-            {hoveredTile.terrain.includes('river') && <Water size={16} className="mr-1" />}
+            {hoveredTile.terrain === 'ocean' && <Droplet size={16} className="mr-1" />}
+            {hoveredTile.terrain.includes('river') && <Droplet size={16} className="mr-1" />}
             <span className="capitalize">
               {hoveredTile.terrain} ({hoveredTile.q}, {hoveredTile.r})
             </span>

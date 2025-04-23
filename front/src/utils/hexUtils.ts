@@ -1,10 +1,15 @@
+// 헥스 그리드 관련 유틸리티 함수들
+// (x,y,z) 좌표계를 사용하는 3D 큐브 좌표계 기반
+// 참고: https://www.redblobgames.com/grids/hexagons/
+
 // 헥스 타일 인터페이스
 export interface Hex {
-  q: number;
-  r: number;
-  s: number;
+  q: number; // 큐브 좌표의 x
+  r: number; // 큐브 좌표의 z
+  s: number; // 큐브 좌표의 y (q + r + s = 0)
 }
 
+// 픽셀 좌표 인터페이스
 export interface Point {
   x: number;
   y: number;
@@ -18,7 +23,7 @@ export function generateHexMap(
   width: number,
   height: number,
   mapType: string = 'Continents',
-  seed: number = Math.random() * 10000
+  seed: number = Math.random() * 10000,
   source: Hex,
   target: Hex,
   blocksView: (hex: Hex) => boolean
@@ -36,13 +41,33 @@ export function generateHexMap(
 }
 
 /**
+ * 두 지점 사이의 시야 확인
+ * @param center 시야 중심점
+ * @param target 목표 지점
+ * @param blocksView 시야 차단 여부 확인 함수
+ */
+export function hasLineOfSight(
+  center: Hex, 
+  target: Hex, 
+  blocksView: (hex: Hex) => boolean
+): boolean {
+  const linePath = getHexLineDraw(center, target);
+  // 시작점과 끝점 제외하고 중간 지점들 확인
+  for (let i = 1; i < linePath.length - 1; i++) {
+    if (blocksView(linePath[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * 시야 범위 계산
  * 특정 위치에서 볼 수 있는 모든 타일 계산
  * @param center 시야 중심점
  * @param radius 시야 거리
  * @param blocksView 시야 차단 여부 확인 함수
  */
-// 시야 범위 계산 함수: center에서 radius만큼 떨어진 모든 hex 중 시야가 닿는 hex만 반환
 export function getVisibleHexes(
   center: Hex,
   radius: number,
@@ -52,70 +77,70 @@ export function getVisibleHexes(
   return hexesInRange.filter(hex => hasLineOfSight(center, hex, blocksView));
 }
 
-  /**
-   * 두 헥스 좌표 사이의 방향 계산
-   * @returns 0-5 사이의 방향 인덱스 (0: 동쪽, 1: 북동쪽, 2: 북서쪽, 3: 서쪽, 4: 남서쪽, 5: 남동쪽)
-   */
-  export function getHexDirection(from: Hex, to: Hex): number {
-    // 방향 벡터 계산
-    const dirQ = to.q - from.q;
-    const dirR = to.r - from.r;
-    const dirS = to.s - from.s;
-    
-    // 주요 이동 방향 찾기
-    const absQ = Math.abs(dirQ);
-    const absR = Math.abs(dirR);
-    const absS = Math.abs(dirS);
-    
-    if (absQ >= absR && absQ >= absS) {
-      // q축 방향으로 이동
-      return dirQ > 0 ? 0 : 3; // 동/서
-    } else if (absR >= absQ && absR >= absS) {
-      // r축 방향으로 이동
-      return dirR > 0 ? 5 : 2; // 남동/북서
-    } else {
-      // s축 방향으로 이동
-      return dirS > 0 ? 1 : 4; // 북동/남서
-    }
-  }
+/**
+ * 두 헥스 좌표 사이의 방향 계산
+ * @returns 0-5 사이의 방향 인덱스 (0: 동쪽, 1: 북동쪽, 2: 북서쪽, 3: 서쪽, 4: 남서쪽, 5: 남동쪽)
+ */
+export function getHexDirection(from: Hex, to: Hex): number {
+  // 방향 벡터 계산
+  const dirQ = to.q - from.q;
+  const dirR = to.r - from.r;
+  const dirS = to.s - from.s;
   
-  /**
-   * 헥스 좌표를 문자열로 변환
-   */
-  export function hexToString(hex: Hex): string {
-    return `${hex.q},${hex.r},${hex.s}`;
-  }
+  // 주요 이동 방향 찾기
+  const absQ = Math.abs(dirQ);
+  const absR = Math.abs(dirR);
+  const absS = Math.abs(dirS);
   
-  /**
-   * 문자열을 헥스 좌표로 변환
-   */
-  export function stringToHex(str: string): Hex {
-    const [q, r, s] = str.split(',').map(Number);
-    return { q, r, s };
+  if (absQ >= absR && absQ >= absS) {
+    // q축 방향으로 이동
+    return dirQ > 0 ? 0 : 3; // 동/서
+  } else if (absR >= absQ && absR >= absS) {
+    // r축 방향으로 이동
+    return dirR > 0 ? 5 : 2; // 남동/북서
+  } else {
+    // s축 방향으로 이동
+    return dirS > 0 ? 1 : 4; // 북동/남서
   }
+}
+
+/**
+ * 헥스 좌표를 문자열로 변환
+ */
+export function hexToString(hex: Hex): string {
+  return `${hex.q},${hex.r},${hex.s}`;
+}
+
+/**
+ * 문자열을 헥스 좌표로 변환
+ */
+export function stringToHex(str: string): Hex {
+  const [q, r, s] = str.split(',').map(Number);
+  return { q, r, s };
+}
+
+/**
+ * 특정 방향으로 헥스 이동
+ * @param hex 시작 헥스
+ * @param direction 방향 인덱스 (0-5)
+ */
+export function hexNeighbor(hex: Hex, direction: number): Hex {
+  const directions: Hex[] = [
+    { q: 1, r: 0, s: -1 },  // 0: 동쪽
+    { q: 1, r: -1, s: 0 },  // 1: 북동쪽
+    { q: 0, r: -1, s: 1 },  // 2: 북서쪽
+    { q: -1, r: 0, s: 1 },  // 3: 서쪽
+    { q: -1, r: 1, s: 0 },  // 4: 남서쪽
+    { q: 0, r: 1, s: -1 }   // 5: 남동쪽
+  ];
   
-  /**
-   * 특정 방향으로 헥스 이동
-   * @param hex 시작 헥스
-   * @param direction 방향 인덱스 (0-5)
-   */
-  export function hexNeighbor(hex: Hex, direction: number): Hex {
-    const directions: Hex[] = [
-      { q: 1, r: 0, s: -1 },  // 0: 동쪽
-      { q: 1, r: -1, s: 0 },  // 1: 북동쪽
-      { q: 0, r: -1, s: 1 },  // 2: 북서쪽
-      { q: -1, r: 0, s: 1 },  // 3: 서쪽
-      { q: -1, r: 1, s: 0 },  // 4: 남서쪽
-      { q: 0, r: 1, s: -1 }   // 5: 남동쪽
-    ];
-    
-    const dir = directions[direction % 6];
-    return {
-      q: hex.q + dir.q,
-      r: hex.r + dir.r,
-      s: hex.s + dir.s
-    };
-  }
+  const dir = directions[direction % 6];
+  return {
+    q: hex.q + dir.q,
+    r: hex.r + dir.r,
+    s: hex.s + dir.s
+  };
+}
   
   /**
    * 타일 이동 비용 계산 (지형에 따라 다름)
@@ -547,5 +572,3 @@ export function hexDistance(a: Hex, b: Hex): number {
     return { path: [], cost: Infinity };
   }
   
-  /**
-   * 헥스 그리드 맵
