@@ -7,7 +7,8 @@ import { Sword, Brain, BookOpen, Users, Flag, Award, Play, Globe, Wand2, Clock, 
 
 export default function Home() {
   const router = useRouter();
-  const [hoveredCivilization, setHoveredCivilization] = useState(null);
+  const [hoveredCivilization, setHoveredCivilization] = useState<string | null>(null);
+
   const mapContainerRef = useRef(null);
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [mapScale, setMapScale] = useState(1);
@@ -159,219 +160,272 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-white">
       {/* 헤더 영역 */}
-      <header className="w-full py-8 flex flex-col items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-grid-pattern opacity-10 z-0"></div>
-        <h1 className="text-5xl font-bold mb-2 z-10 font-geist-mono tracking-tight">텍스트 문명</h1>
-        <h2 className="text-2xl text-gray-300 mb-8 z-10">Text Civilization</h2>
-        <p className="text-lg text-center max-w-2xl mx-auto mb-8 text-gray-300 z-10">
-          고대부터 미래까지, 당신의 문명을 이끌어 승리를 향해 나아가세요.
-          육각형 타일 기반의 턴제 전략 게임으로 역사를 새롭게 써내려갑니다.
+      <header className="w-full py-12 flex flex-col items-center justify-center relative overflow-hidden bg-gradient-to-b from-slate-900 to-slate-800 shadow-2xl">
+
+      {/* 게임 모드 안내 영역 (select-mode 스타일 참고) */}
+        <div className="absolute inset-0 bg-grid-pattern opacity-10 z-0 animate-pulse"></div>
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-3 z-10 font-geist-mono tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-lg text-center">텍스트 문명</h1>
+        <h2 className="text-2xl md:text-3xl text-gray-200 mb-6 z-10 font-semibold tracking-wide text-center">Text Civilization</h2>
+        <p className="text-lg md:text-xl text-center max-w-2xl mx-auto mb-10 text-gray-300 z-10 font-medium">
+          고대부터 미래까지, <span className="text-blue-300 font-bold">당신의 문명</span>을 이끌어<br className="hidden md:block" />승리를 향해 나아가세요.<br />육각형 타일 기반의 <span className="text-indigo-300 font-bold">턴제 전략 게임</span>으로 역사를 새롭게 써내려갑니다.
         </p>
         <button 
-          onClick={() => router.push('/game/select-mode')}
-          className="bg-gradient-to-r from-blue-600 to-indigo-700 py-3 px-12 rounded-full text-xl font-bold flex items-center z-10 hover:from-blue-700 hover:to-indigo-800 transition-all shadow-lg"
+          onClick={() => router.push(`/game/select-mode`)}
+          className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 py-4 px-16 rounded-full text-2xl font-extrabold flex items-center gap-3 z-10 hover:from-blue-600 hover:to-purple-700 transition-all shadow-2xl ring-2 ring-blue-400/30 focus:outline-none focus:ring-4 focus:ring-indigo-400/50 animate-bounce"
+          aria-label="게임 시작하기"
         >
-          <Play className="mr-2" size={24} />
+          <Play className="mr-1" size={28} />
           게임 시작하기
         </button>
+        <div className="absolute left-1/2 bottom-0 translate-x-[-50%] translate-y-1/2 z-0 blur-2xl opacity-40 pointer-events-none select-none" aria-hidden="true">
+          <Globe size={340} className="text-blue-500/20 animate-spin-slow" />
+        </div>
       </header>
 
-      {/* 육각형 타일 데모 맵 */}
-      <section className="py-8 px-4 relative overflow-hidden" style={{ height: '300px' }}>
-        <div ref={mapContainerRef} className="w-full h-full relative">
-          {/* 지도 컨트롤 */}
-          <div className="absolute top-2 right-2 z-10 flex flex-col space-y-2">
-            <button 
-              className="bg-slate-700 p-2 rounded-full hover:bg-slate-600"
-              onClick={() => handleZoom(1.2)}
-            >
-              <ZoomIn size={20} />
-            </button>
-            <button 
-              className="bg-slate-700 p-2 rounded-full hover:bg-slate-600"
-              onClick={() => handleZoom(0.8)}
-            >
-              <ZoomOut size={20} />
-            </button>
-          </div>
-          
-          {/* 육각형 타일 */}
-          <div 
-            className="absolute left-0 top-0 w-full h-full"
-            style={{ 
-              transform: `translate(${mapOffset.x}px, ${mapOffset.y}px) scale(${mapScale})`,
-              transformOrigin: 'center',
-            }}
-          >
-            {demoTiles.map((tile) => (
-              <div 
-                key={tile.id}
-                className={cn(
-                  "absolute cursor-pointer transition-transform hover:scale-105",
-                  getTileColor(tile.terrain)
-                )}
-                style={{
-                  width: '70px',
-                  height: '80px',
-                  clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-                  left: `${tile.x - 200}px`,
-                  top: `${tile.y - 100}px`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* 문명 선택 영역 */}
+    
+      
       <section className="py-16 px-4">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold mb-2 text-center">당신의 문명을 선택하세요</h2>
-          <p className="text-center text-gray-300 mb-12">각 문명은 고유한 특성과 장점을 가지고 있습니다</p>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {civilizations.map((civ) => (
-              <div 
-                key={civ.id}
-                className={cn(
-                  "bg-gradient-to-br p-0.5 rounded-lg transform transition-all hover:scale-105",
-                  hoveredCivilization === civ.id ? civ.color : "from-gray-700 to-gray-900"
-                )}
-                onMouseEnter={() => setHoveredCivilization(civ.id)}
-                onMouseLeave={() => setHoveredCivilization(null)}
-              >
-                <div className="bg-gray-800 h-full rounded-lg p-6 flex flex-col items-center justify-center">
-                  <div className={cn(
-                    "w-16 h-16 rounded-full flex items-center justify-center mb-4 transition-all",
-                    `bg-gradient-to-br ${civ.color}`
-                  )}>
-                    {civ.icon}
-                  </div>
-                  <h3 className="text-xl font-bold mb-1">{civ.name}</h3>
-                  <p className="text-gray-300 text-center text-sm">{civ.specialty}</p>
-                </div>
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold mb-4 text-center">게임 모드</h2>
+          <p className="text-center text-gray-300 mb-10">
+            원하는 플레이 스타일에 맞는 <span className="text-blue-300 font-bold">게임 모드</span>를 선택하세요.<br/>
+            턴 수와 소요 시간, 난이도에 따라 다양한 전략을 경험할 수 있습니다.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 shadow-md flex flex-col items-center">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center mb-4">
+                <Zap size={32} />
               </div>
-            ))}
+              <h3 className="text-xl font-bold mb-2">짧은 게임</h3>
+              <p className="text-gray-400 text-sm mb-1">50턴</p>
+              <p className="text-gray-400 text-sm mb-3">약 30분~1시간</p>
+              <p className="text-gray-300 text-center text-sm">빠른 전략 전개와<br/>짧은 시간 플레이를 원하는 분께 추천</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 shadow-md flex flex-col items-center">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center mb-4">
+                <Clock size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">표준 게임</h3>
+              <p className="text-gray-400 text-sm mb-1">100턴</p>
+              <p className="text-gray-400 text-sm mb-3">약 1~2시간</p>
+              <p className="text-gray-300 text-center text-sm">전략과 성장의 균형<br/>표준적인 플레이를 원하는 분께 추천</p>
+            </div>
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-6 shadow-md flex flex-col items-center">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center mb-4">
+                <Calendar size={32} />
+              </div>
+              <h3 className="text-xl font-bold mb-2">긴 게임</h3>
+              <p className="text-gray-400 text-sm mb-1">250턴</p>
+              <p className="text-gray-400 text-sm mb-3">약 3~5시간</p>
+              <p className="text-gray-300 text-center text-sm">장기적인 성장과<br/>깊은 전략을 원하는 분께 추천</p>
+            </div>
           </div>
         </div>
       </section>
-
       {/* 게임 특징 영역 */}
       <section className="py-16 px-4 bg-gradient-to-b from-slate-800 to-slate-900">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold mb-2 text-center">게임 특징</h2>
           <p className="text-center text-gray-300 mb-12">텍스트 문명만의 특별한 경험</p>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((feature, index) => (
-              <div 
-                key={index} 
-                className="bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-xl transition-all"
-                style={{ 
-                  clipPath: index % 2 === 0 ? 'polygon(0% 0%, 100% 0%, 100% 85%, 85% 100%, 0% 100%)' : 'polygon(0% 0%, 100% 0%, 100% 100%, 15% 100%, 0% 85%)'
-                }}
-              >
-                <p className="text-lg">{feature}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-16">
+            {features.map((feature, i) => (
+              <div key={i} className="flex flex-col items-center bg-gradient-to-br from-slate-700 to-slate-800 rounded-xl p-6 shadow-md hover:shadow-xl transition-all group">
+                <div className="mb-3 text-4xl animate-bounce-slow group-hover:scale-125 transition-transform">{feature.slice(0,2)}</div>
+                <div className="text-lg font-semibold text-gray-100 text-center tracking-tight group-hover:text-blue-200 transition-colors">
+                  {feature.slice(2)}
+                </div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* 게임 모드 영역 - 육각형 카드 디자인 */}
-      <section className="py-16 px-4">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold mb-2 text-center">게임 모드</h2>
-          <p className="text-center text-gray-300 mb-12">당신의 플레이 스타일에 맞게 선택하세요</p>
           
-          <div className="flex items-center justify-center">
-            <div className="flex flex-wrap justify-center gap-4">
-              {gameTypes.map((type, index) => (
-                <div 
-                  key={index} 
-                  className="w-64 h-72 relative cursor-pointer transition-transform hover:scale-105"
-                >
-                  <div 
-                    className="absolute inset-0 bg-gradient-to-br from-blue-700 to-indigo-900"
-                    style={{
-                      clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-                    }}
-                  >
-                    <div className="absolute inset-2 bg-gray-800 flex flex-col items-center justify-center"
-                      style={{
-                        clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
-                      }}
-                    >
-                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center mb-4">
-                        {index === 0 ? <Zap size={28} /> : index === 1 ? <Clock size={28} /> : <Calendar size={28} />}
-                      </div>
-                      <h3 className="text-xl font-bold mb-3">{type.name}</h3>
-                      <p className="text-gray-300 mb-2">{type.turns}</p>
-                      <p className="text-gray-400 text-sm">{type.time}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          {/* 지도 유형 영역 */}
+          <section className="py-10">
+            <h2 className="text-3xl font-bold mb-2 text-center">지도 유형</h2>
+            <p className="text-center text-gray-300 mb-8">다양한 지도 유형은 플레이 스타일과 전략에 큰 영향을 줍니다.</p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-slate-900 rounded-xl overflow-hidden text-sm md:text-base border border-slate-700">
+                <thead>
+                  <tr className="bg-slate-800 text-blue-200">
+                    <th className="py-3 px-4 border-b border-slate-700 text-left">지도 유형</th>
+                    <th className="py-3 px-4 border-b border-slate-700 text-left">특징</th>
+                    <th className="py-3 px-4 border-b border-slate-700 text-left">전략적 영향</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Continents (대륙)</td>
+                    <td className="py-3 px-4">2개 이상의 큰 대륙으로 나뉜 지도</td>
+                    <td className="py-3 px-4">중후반에 해상 탐사와 해군력 중요</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Pangaea (팡게아)</td>
+                    <td className="py-3 px-4">하나의 거대한 대륙으로 구성</td>
+                    <td className="py-3 px-4">육지 전쟁과 빠른 접촉이 핵심</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Archipelago (군도)</td>
+                    <td className="py-3 px-4">섬이 많은 지도</td>
+                    <td className="py-3 px-4">해군 중심, 해양 탐험과 도시 확장 전략 유리</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Fractal (프랙탈)</td>
+                    <td className="py-3 px-4">랜덤한 대륙/지형 생성</td>
+                    <td className="py-3 px-4">예측 불가, 리플레이성 높음</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Small Continents (작은 대륙)</td>
+                    <td className="py-3 px-4">여러 개의 중간 규모 대륙</td>
+                    <td className="py-3 px-4">해군과 육군 모두 균형 있게 사용 가능</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Terra (테라)</td>
+                    <td className="py-3 px-4">모두 같은 대륙에서 시작, 신대륙 존재</td>
+                    <td className="py-3 px-4">신대륙 탐험이 중요한 변수</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Tilted Axis (기울어진 축)</td>
+                    <td className="py-3 px-4">지도가 남북이 아닌 동서로 길게 배치됨</td>
+                    <td className="py-3 px-4">이상한 기후와 전략 요구</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Inland Sea (내륙 바다)</td>
+                    <td className="py-3 px-4">가운데 바다, 주변 육지</td>
+                    <td className="py-3 px-4">해상 전투 제한적, 중심 바다를 두고 경쟁 가능</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Shuffle (셔플)</td>
+                    <td className="py-3 px-4">무작위로 지도 유형 섞임</td>
+                    <td className="py-3 px-4">전략 예측 어려움, 도전적인 플레이</td>
+                  </tr>
+                  <tr className="hover:bg-slate-800/70">
+                    <td className="py-3 px-4 font-bold">Donut (도넛)</td>
+                    <td className="py-3 px-4">가운데가 비어 있고 주변에 땅</td>
+                    <td className="py-3 px-4">가운데 지역 장악이 핵심 전략</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </div>
+          </section>
+
+          {/* 문명 특징별 안내 영역 (select-mode 스타일 참고) */}
+          <section className="py-10">
+            <h2 className="text-3xl font-bold mb-2 text-center">문명 특징별 대표 문명 안내</h2>
+            <p className="text-center text-gray-300 mb-10">각 문명은 특정 분야에 강점을 가지고 있습니다.<br/>플레이 스타일에 맞는 특징을 골라 대표 문명을 참고해 보세요!</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="bg-gradient-to-br from-red-800 to-red-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-red-200">군사</h3>
+                <p className="text-gray-300 text-sm mb-3">강력한 유닛과 전투 보너스로 정복에 유리합니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>로마</li>
+                  <li>몽골</li>
+                  <li>일본</li>
+                  <li>독일</li>
+                  <li>아즈텍</li>
+                </ul>
+              </div>
+              <div className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-blue-200">과학</h3>
+                <p className="text-gray-300 text-sm mb-3">기술 발전과 연구에 특화되어 빠른 성장과 승리를 노릴 수 있습니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>중국</li>
+                  <li>한국</li>
+                  <li>바빌론</li>
+                  <li>마야</li>
+                </ul>
+              </div>
+              <div className="bg-gradient-to-br from-pink-800 to-pink-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-pink-200">문화</h3>
+                <p className="text-gray-300 text-sm mb-3">문화력과 관광에 강점이 있어 문화 승리에 유리합니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>이집트</li>
+                  <li>프랑스</li>
+                  <li>브라질</li>
+                  <li>페르시아</li>
+                </ul>
+              </div>
+              <div className="bg-gradient-to-br from-yellow-800 to-yellow-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-yellow-200">경제</h3>
+                <p className="text-gray-300 text-sm mb-3">자원 수집과 생산, 상업에 특화되어 도시 발전이 빠릅니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>인도</li>
+                  <li>아라비아</li>
+                  <li>베네치아</li>
+                  <li>아즈텍</li>
+                </ul>
+              </div>
+              <div className="bg-gradient-to-br from-green-800 to-green-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-green-200">확장/탐험</h3>
+                <p className="text-gray-300 text-sm mb-3">도시 확장과 지도 탐험에 강점이 있습니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>잉글랜드</li>
+                  <li>아메리카</li>
+                  <li>쇼쇼니</li>
+                  <li>잉카</li>
+                </ul>
+              </div>
+              <div className="bg-gradient-to-br from-indigo-800 to-indigo-900 rounded-xl p-6 shadow-lg">
+                <h3 className="text-xl font-bold mb-2 text-indigo-200">외교/방어</h3>
+                <p className="text-gray-300 text-sm mb-3">도시국가와의 외교, 방어적 플레이에 유리합니다.</p>
+                <ul className="text-gray-200 text-sm space-y-1 list-disc ml-5">
+                  <li>그리스</li>
+                  <li>에티오피아</li>
+                  <li>시암</li>
+                </ul>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
-
-      {/* 승리 조건 영역 */}
+      {/* 승리 조건/게임 목표 영역 (select-mode 스타일 설명 차용) */}
       <section className="py-16 px-4 bg-gradient-to-b from-slate-800 to-slate-900">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold mb-2 text-center">승리 조건</h2>
-          <p className="text-center text-gray-300 mb-12">문명의 위대함을 증명하는 다양한 방법</p>
-          
+          <h2 className="text-3xl font-bold mb-4 text-center">게임 목표와 승리 방식</h2>
+          <p className="text-center text-gray-300 mb-10">
+            <span className="text-blue-300 font-bold">텍스트 문명</span>에서는 다양한 승리 조건이 존재합니다.<br />
+            <span className="text-indigo-200">게임 모드</span>와 <span className="text-indigo-200">난이도</span>에 따라 도전과 전략이 달라집니다.<br />
+            원하는 목표를 정하고, 그에 맞는 전략을 세워보세요!
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div 
-              className="bg-gradient-to-r from-blue-900 to-blue-800 rounded-lg p-6 shadow-lg"
-              style={{ clipPath: 'polygon(0 0, 100% 0, 85% 100%, 0 100%)' }}
-            >
+            <div className="bg-gradient-to-r from-blue-900 to-blue-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center mb-3">
                 <div className="w-10 h-10 rounded-full bg-blue-700 flex items-center justify-center mr-3">
                   <Wand2 size={20} />
                 </div>
                 <h3 className="text-xl font-bold">과학 승리</h3>
               </div>
-              <p className="text-gray-300">가장 발전된 기술을 연구하고 미래 시대를 선도하세요. 우주 개척이나 첨단 기술로 승리를 쟁취하세요.</p>
+              <p className="text-gray-300 text-sm">가장 발전된 기술을 연구하고 미래 시대를 선도하세요. 우주 개척이나 첨단 기술로 승리를 쟁취할 수 있습니다.</p>
             </div>
-            <div 
-              className="bg-gradient-to-r from-purple-900 to-purple-800 rounded-lg p-6 shadow-lg"
-              style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15% 100%)' }}
-            >
+            <div className="bg-gradient-to-r from-purple-900 to-purple-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center mb-3">
                 <div className="w-10 h-10 rounded-full bg-purple-700 flex items-center justify-center mr-3">
                   <BookOpen size={20} />
                 </div>
                 <h3 className="text-xl font-bold">문화 승리</h3>
               </div>
-              <p className="text-gray-300">예술과 문화의 중심지가 되어 당신의 문화적 영향력을 전 세계에 전파하세요.</p>
+              <p className="text-gray-300 text-sm">예술과 문화의 중심지가 되어 전 세계에 영향력을 확장하세요. 문화적 우위를 통해 승리를 노릴 수 있습니다.</p>
             </div>
-            <div 
-              className="bg-gradient-to-r from-red-900 to-red-800 rounded-lg p-6 shadow-lg"
-              style={{ clipPath: 'polygon(15% 0, 100% 0, 100% 100%, 0 100%)' }}
-            >
+            <div className="bg-gradient-to-r from-red-900 to-red-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center mb-3">
                 <div className="w-10 h-10 rounded-full bg-red-700 flex items-center justify-center mr-3">
                   <Sword size={20} />
                 </div>
                 <h3 className="text-xl font-bold">정복 승리</h3>
               </div>
-              <p className="text-gray-300">강력한 군사력으로 적대 문명의 수도를 점령하고 세계를 통일하세요.</p>
+              <p className="text-gray-300 text-sm">강력한 군사력으로 적 문명의 수도를 점령하여 세계를 통일하세요. 공격적이고 전략적인 플레이가 요구됩니다.</p>
             </div>
-            <div 
-              className="bg-gradient-to-r from-green-900 to-green-800 rounded-lg p-6 shadow-lg"
-              style={{ clipPath: 'polygon(0 0, 85% 0, 100% 100%, 0 100%)' }}
-            >
+            <div className="bg-gradient-to-r from-green-900 to-green-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center mb-3">
                 <div className="w-10 h-10 rounded-full bg-green-700 flex items-center justify-center mr-3">
                   <Users size={20} />
                 </div>
                 <h3 className="text-xl font-bold">외교 승리</h3>
               </div>
-              <p className="text-gray-300">외교적 영향력을 확대하고 세계 의회에서 주도적인 역할을 맡아 평화로운 리더십을 보여주세요.</p>
+              <p className="text-gray-300 text-sm">외교적 영향력을 키워 세계 의회에서 주도권을 잡아 평화로운 리더십을 보여주세요.</p>
             </div>
+          </div>
+          <div className="mt-8 text-center text-gray-400 text-sm">
+            <b>팁:</b> 게임 시작 시 <span className="text-indigo-200">게임 모드</span>와 <span className="text-indigo-200">난이도</span>를 선택하면, 목표와 승리 방식에 따라 전략을 달리할 수 있습니다.
           </div>
         </div>
       </section>

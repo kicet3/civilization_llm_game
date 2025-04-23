@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { HexGrid, Layout, Hexagon, Text, GridGenerator } from 'react-hexgrid';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -14,7 +14,12 @@ import {
   Mountain, Trees, Waves, Globe, Sun, Leaf, 
   Tent, Compass, Anchor 
 } from 'lucide-react';
-// 타입 정의
+
+import { createNoise2D } from 'simplex-noise';
+import seedrandom from 'seedrandom';
+import { useSearchParams } from 'next/navigation';
+import TurnManager from './TurnManager';
+
 interface Hexagon {
   q: number;
   r: number;
@@ -34,13 +39,26 @@ interface Resource {
   faith: number;
 }
 
-interface City {
+export interface City {
   id: number;
   name: string;
   population: number;
   production: string;
   turnsLeft: number;
+  food?: number;
+  gold?: number;
+  science?: number;
+  culture?: number;
+  faith?: number;
+  happiness?: number;
+  hp?: number;
+  defense?: number;
+  garrisonedUnit?: string;
+  productionQueue?: { name: string; turnsLeft: number }[];
+  foodToNextPop?: number;
+  cultureToNextBorder?: number;
 }
+
 
 interface LogEntry {
   type: 'system' | 'advisor' | 'event' | 'player';
@@ -86,6 +104,10 @@ function TabNavigation({ selectedTab, setSelectedTab }: { selectedTab: string, s
     { key: 'cities', icon: <Book size={24} /> },
     { key: 'research', icon: <Beaker size={24} /> },
     { key: 'units', icon: <Sword size={24} /> },
+    { key: 'diplomacy', icon: <Users size={24} /> },    // 외교
+    { key: 'religion', icon: <Award size={24} /> },     // 종교
+    { key: 'policy', icon: <Tent size={24} /> },        // 사회정책
+    { key: 'turn', icon: <ChevronUp size={24} /> },     // 턴 관리
   ];
   return (
     <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
@@ -105,165 +127,362 @@ function TabNavigation({ selectedTab, setSelectedTab }: { selectedTab: string, s
   );
 }
 
-// MapPanel: Hex grid map
-function MapPanel({ hexagons, getHexColor, handleHexClick, selectedHex }: {
-  hexagons: Hexagon[], 
-  getHexColor: (terrain: string) => string, 
-  handleHexClick: (hex: Hexagon) => void, 
-  selectedHex: Hexagon | null
-}) {
-  // 뷰박스 오프셋 상태 추가
-  const [viewBoxOffset, setViewBoxOffset] = useState({ x: -50, y: -50 });
+// MapPanel: Map display
+function MapPanel() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const width = 1600;
+  const height = 1200;
+  const cell = 40; // 타일 크기(px) - 스케일 확대
+  const cols = Math.floor(width / cell);
+  const rows = Math.floor(height / cell);
 
-  // 키보드 이벤트 처리
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      setViewBoxOffset((prev) => {
-        const step = 5; // 움직이는 거리
-        switch (e.key) {
-          case "ArrowUp": return { ...prev, y: prev.y - step };
-          case "ArrowDown": return { ...prev, y: prev.y + step };
-          case "ArrowLeft": return { ...prev, x: prev.x - step };
-          case "ArrowRight": return { ...prev, x: prev.x + step };
-          default: return prev;
+  // 도시 이름 샘플
+  const cityNames = ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "수원", "창원", "고양", "용인", "성남", "청주", "전주", "천안", "안산", "안양", "남양주", "포항", "의정부", "김해", "평택", "구미", "진주", "원주", "아산", "경산", "거제", "양산", "춘천", "제주"];
+  // 플레이어 색상 샘플
+  const playerColors = ["#e53935", "#3949ab", "#43a047", "#fbc02d", "#8e24aa", "#00838f", "#6d4c41"];
+
+  // 지도 이동(패닝) 상태
+  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+
+  // 매 게임마다 랜덤 seed로 노이즈 인스턴스 생성
+  const [seed, setSeed] = React.useState(() => `${Date.now()}-${Math.random()}`);
+  const noise2D = useRef(createNoise2D(seedrandom(seed))).current;
+
+
+  // 강 경로 생성 (맵 중앙에서 한 줄기)
+  const riverPath = React.useMemo(() => {
+    // 맵의 5분의 1 이상이 river가 되도록 충분히 긴 강줄기(들) 생성
+    const totalTiles = rows * cols;
+    const targetRiverTiles = Math.floor(totalTiles / 8); // 12.5% (8분의 1)
+    const riverSet = new Set<string>();
+    // 반복적으로 강줄기를 이어붙임
+    // 맵을 4~6개 구역(grid)으로 나누고, 각 구역마다 수원지 1개씩 배치
+    const gridCols = 2 + Math.floor(Math.random() * 2); // 2~3
+    const gridRows = 2 + Math.floor(Math.random() * 2); // 2~3
+    const grids: [number, number][] = [];
+    for (let gx = 0; gx < gridCols; gx++) {
+      for (let gy = 0; gy < gridRows; gy++) {
+        // 각 구역의 범위 내에서 랜덤한 수원지
+        const x = Math.floor((gx + Math.random()) * cols / gridCols);
+        const y = Math.floor((gy + Math.random()) * rows / gridRows);
+        grids.push([x, y]);
+      }
+    }
+    let gridIdx = 0;
+    while (riverSet.size < targetRiverTiles) {
+      let localPath: [number, number][] = [];
+      // 골고루 분포된 수원지에서 시작
+      let [x, y] = grids[gridIdx % grids.length];
+      gridIdx++;
+      // 이미 river인 곳이면 새 위치 찾기 (최대 10회)
+      let attempts = 0;
+      while (riverSet.has(`${x},${y}`) && attempts < 10) {
+        const g = grids[Math.floor(Math.random() * grids.length)];
+        x = g[0]; y = g[1];
+        attempts++;
+      }
+      localPath.push([x, y]);
+      riverSet.add(`${x},${y}`);
+      const maxLen = Math.floor(rows * cols * 0.18); // 한 줄기 최대 길이(전체의 18%까지 허용)
+      let prevDir: [number, number] = [0, 1];
+      for (let i = 0; i < maxLen; i++) {
+        // 직전 방향 유지, 15% 확률로만 방향 틀기
+        let dir: [number, number];
+        if (i === 0) {
+          dir = Math.random() < 0.5 ? [0, 1] : [1, 1];
+        } else {
+          const prev = localPath[localPath.length - 1];
+          prevDir = [prev[0] - (localPath[localPath.length - 2]?.[0] ?? x), prev[1] - (localPath[localPath.length - 2]?.[1] ?? y)];
+          const possibleDirs: [number, number][] = [prevDir, [prevDir[0]+1, prevDir[1]], [prevDir[0]-1, prevDir[1]], [prevDir[0], prevDir[1]+1], [prevDir[0], prevDir[1]-1]];
+          dir = possibleDirs[Math.random() < 0.85 ? 0 : Math.floor(Math.random() * possibleDirs.length)];
+          if (dir[0] === 0 && dir[1] === 0) dir = [0, 1];
         }
-      });
-    };
+        x += dir[0];
+        y += dir[1];
+        // 경계에서 너무 일찍 끊기지 않게, 5% 확률로 경계 무시하고 한 칸 더 진행
+        if ((x < 1 || x > cols - 2 || y < 1 || y > rows - 2) && Math.random() > 0.05) break;
+        const key = `${x},${y}`;
+        if (riverSet.has(key)) continue;
+        localPath.push([x, y]);
+        riverSet.add(key);
+        // riverSet이 이미 목표량을 채우면 즉시 종료
+        if (riverSet.size >= targetRiverTiles) break;
+      }
+    }
+    // Set을 [number, number][]로 변환
+    return Array.from(riverSet).map(str => str.split(",").map(Number) as [number, number]);
+  }, [cols, rows, seed]);
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  // 도시 배치(노이즈 기반 규칙적)
+  const cities = React.useMemo(() => {
+    const arr: any[] = [];
+    let cityIdx = 0;
+    // 맵 전체에 고르게 분포하도록 x, y offset과 스케일 조정
+    for (let y = 2; y < rows - 2; y += 3) {
+      for (let x = 2 + (y % 6 === 0 ? 2 : 0); x < cols - 2; x += 6) {
+        const noise = noise2D((x + 20) / 50, (y + 30) / 50);
+        const terrain = getTerrain(noise, x, y);
+        if (noise > -0.25 && cityIdx < cityNames.length && terrain !== 'river') {
+          const name = cityNames[cityIdx % cityNames.length];
+          const isCapital = cityIdx === 0;
+          const playerId = cityIdx % playerColors.length;
+          arr.push({ x, y, name, isCapital, playerId, prod: ["도서관", "시장", "병영"][cityIdx % 3], prodTurns: 2 + (cityIdx % 4), size: 1.1 + Math.abs(noise) * 1.5 });
+          cityIdx++;
+        }
+      }
+    }
+    return arr;
+  }, [rows, cols, noise2D, seed]);
 
-  // 육각형 데이터가 없을 경우 처리
-  if (!hexagons || hexagons.length === 0) {
-    return <div className="text-red-500 p-4">지도 데이터를 로드할 수 없습니다.</div>;
+
+
+  // 지형 타입 결정 함수
+  function getTerrain(noise: number, x?: number, y?: number): string {
+    // riverPath에 포함된 좌표면 river
+    if (typeof x === 'number' && typeof y === 'number') {
+      for (const [rx, ry] of riverPath) {
+        if (Math.abs(rx - x) <= 0 && Math.abs(ry - y) <= 0) return 'river';
+      }
+    }
+    if (noise < -0.92) return 'beach';
+    if (noise < 0.45) return 'plains';
+    if (noise < 0.7) return 'forest';
+    return 'mountain';
+  }
+  // 색상 매핑
+  function getColor(terrain: string): string {
+    switch (terrain) {
+      case 'river': return '#2176ae'; // 강: 파란색
+      case 'beach': return '#ffe066';
+      case 'plains': return '#8bc34a';
+      case 'forest': return '#388e3c';
+      case 'mountain': return '#b0bec5';
+      default: return '#222';
+    }
   }
 
-  // 지형에 따른 아이콘 매핑
-  const getTerrainIcon = (terrain: string) => {
-    switch (terrain) {
-      case 'mountain': return Mountain;
-      case 'forest': return Trees;
-      case 'ocean': return Waves;
-      case 'plains': return Globe;
-      case 'desert': return Sun;
-      case 'grassland': return Leaf;
-      case 'hills': return Tent;
-      default: return Compass;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+    const hexHeight = cell;
+    const hexWidth = Math.sqrt(3) / 2 * hexHeight;
+    const hexVert = hexHeight * 0.75;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        // 육각형 중심 좌표 계산 (이동 오프셋 반영)
+        const cx = x * hexWidth + ((y % 2) * hexWidth) / 2 + hexWidth / 2 + offset.x;
+        const cy = y * hexVert + hexHeight / 2 + offset.y;
+        // 섬 형태를 위해 중심부로 갈수록 육지 확률 증가
+        const nx = (x / cols - 0.5) * 2;
+        const ny = (y / rows - 0.5) * 2;
+        const dist = Math.sqrt(nx * nx + ny * ny);
+        // 노이즈 값 (섬 모양 강조)
+        let noise = noise2D(x / 80, y / 80) - dist * 0.7;
+        const terrain = getTerrain(noise, x, y);
+        // --- 육각형 그리기 ---
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = Math.PI / 3 * i;
+          const px = cx + Math.cos(angle) * hexWidth / 2;
+          const py = cy + Math.sin(angle) * hexHeight / 2;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = getColor(terrain);
+        ctx.fill();
+        // --- 오버레이: 타일 경계선 ---
+        ctx.strokeStyle = 'rgba(80,80,80,0.35)';
+        ctx.lineWidth = 0.7;
+        ctx.stroke();
+        // --- 오버레이: 랜덤 도시/유닛/자원 ---
+        // 도시: 육지(평야/숲/산)에서만, 2% 확률
+        if ((terrain === 'plains' || terrain === 'forest' || terrain === 'mountain') && Math.abs(noise * 1000) % 50 === 0) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, hexWidth/3, 0, 2*Math.PI);
+          ctx.fillStyle = '#b388ff';
+          ctx.globalAlpha = 0.8;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+        // 유닛: 육지에서만, 2% 확률
+        if ((terrain === 'plains' || terrain === 'forest') && Math.abs(noise * 1000) % 49 === 0) {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - hexHeight/3 + 4);
+          ctx.lineTo(cx - hexWidth/3 + 2, cy + hexHeight/4 - 2);
+          ctx.lineTo(cx + hexWidth/3 - 2, cy + hexHeight/4 - 2);
+          ctx.closePath();
+          ctx.fillStyle = '#ff7043';
+          ctx.globalAlpha = 0.9;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        // 자원: 바다/육지 모두, 1.5% 확률
+        if (Math.abs(noise * 1000) % 67 === 0) {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(Math.PI/10);
+          ctx.beginPath();
+          for (let i = 0; i < 5; i++) {
+            ctx.lineTo(Math.cos((18 + i * 72) / 180 * Math.PI) * (hexWidth/2.3),
+                       -Math.sin((18 + i * 72) / 180 * Math.PI) * (hexWidth/2.3));
+            ctx.lineTo(Math.cos((54 + i * 72) / 180 * Math.PI) * (hexWidth/4),
+                       -Math.sin((54 + i * 72) / 180 * Math.PI) * (hexWidth/4));
+          }
+          ctx.closePath();
+          ctx.fillStyle = '#ffd600';
+          ctx.globalAlpha = 0.9;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+          ctx.restore();
+        }
+        // 도시 시각화
+        for (let city of cities) {
+          if (city.x === x && city.y === y) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, hexWidth/3, 0, 2*Math.PI);
+            ctx.fillStyle = playerColors[city.playerId];
+            ctx.globalAlpha = 0.8;
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+            // 도시 이름
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(city.name, cx, cy + hexHeight/3);
+            // 생산 텍스트
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(city.prod, cx, cy + hexHeight/3 + 15);
+            // 수도 강조
+            if (city.isCapital) {
+              ctx.beginPath();
+              ctx.arc(cx, cy, hexWidth/3 + 2, 0, 2*Math.PI);
+              ctx.strokeStyle = '#fff';
+              ctx.lineWidth = 2;
+          }
+        }
+      }
+      // 국경선
+      if (terrain === 'plains' || terrain === 'forest' || terrain === 'mountain') {
+        ctx.beginPath();
+        ctx.moveTo(cx - hexWidth/2, cy);
+        ctx.lineTo(cx + hexWidth/2, cy);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      // 지형 패턴
+      if (terrain === 'plains') {
+        ctx.beginPath();
+        ctx.moveTo(cx - hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy + hexHeight/4);
+        ctx.lineTo(cx - hexWidth/4, cy + hexHeight/4);
+        ctx.closePath();
+        ctx.fillStyle = '#8bc34a';
+        ctx.globalAlpha = 0.5;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      } else if (terrain === 'forest') {
+        ctx.beginPath();
+        ctx.moveTo(cx - hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy + hexHeight/4);
+        ctx.lineTo(cx - hexWidth/4, cy + hexHeight/4);
+        ctx.closePath();
+        ctx.fillStyle = '#388e3c';
+        ctx.globalAlpha = 0.5;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      } else if (terrain === 'mountain') {
+        ctx.beginPath();
+        ctx.moveTo(cx - hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy - hexHeight/4);
+        ctx.lineTo(cx + hexWidth/4, cy + hexHeight/4);
+        ctx.lineTo(cx - hexWidth/4, cy + hexHeight/4);
+        ctx.closePath();
+        ctx.fillStyle = '#b0bec5';
+        ctx.globalAlpha = 0.5;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      } else if (terrain === 'river') {
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.strokeStyle = '#2176ae';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx - hexWidth/3, cy - hexHeight/4);
+        ctx.bezierCurveTo(cx, cy - hexHeight/8, cx, cy + hexHeight/8, cx + hexWidth/3, cy + hexHeight/4);
+        ctx.stroke();
+        ctx.restore();
+        } else if (terrain === 'mountain') {
+          ctx.beginPath();
+          ctx.moveTo(cx - hexWidth/4, cy - hexHeight/4);
+          ctx.lineTo(cx + hexWidth/4, cy - hexHeight/4);
+          ctx.lineTo(cx + hexWidth/4, cy + hexHeight/4);
+          ctx.lineTo(cx - hexWidth/4, cy + hexHeight/4);
+          ctx.closePath();
+          ctx.fillStyle = '#b0bec5';
+          ctx.globalAlpha = 0.5;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
+      }
     }
-  };
+  }, [canvasRef, noise2D, rows, cols, cell, getColor, getTerrain, offset, cities]);
+
+  // 키보드 이동 핸들러
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['ArrowUp', 'w', 'W'].includes(e.key)) setOffset(o => ({ ...o, y: o.y + cell }));
+      if (['ArrowDown', 's', 'S'].includes(e.key)) setOffset(o => ({ ...o, y: o.y - cell }));
+      if (['ArrowLeft', 'a', 'A'].includes(e.key)) setOffset(o => ({ ...o, x: o.x + cell }));
+      if (['ArrowRight', 'd', 'D'].includes(e.key)) setOffset(o => ({ ...o, x: o.x - cell }));
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cell]);
 
   return (
-    <div className="w-full h-full">
-      <HexGrid 
-        width="100vw" 
-        height="100vh" 
-        viewBox={`${viewBoxOffset.x} ${viewBoxOffset.y} 100 100`}
-      >
-        <Layout 
-          size={{ x: 4, y: 4 }}  // 크기 축소 
-          flat 
-          spacing={1.05}  // 간격 조정
-          origin={{ x: 0, y: 0 }}
-        >
-          {hexagons.map((hex, idx) => {
-            const TerrainIcon = getTerrainIcon(hex.terrain);
-            return (
-              <Hexagon
-                key={idx}
-                q={hex.q}
-                r={hex.r}
-                s={hex.s}
-                fill={getHexColor(hex.terrain)}
-                onClick={() => handleHexClick(hex)}
-                className={cn(
-                  "cursor-pointer hover:opacity-80",
-                  selectedHex === hex ? "stroke-2 stroke-white" : ""
-                )}
-              >
-                <foreignObject x="-2.5" y="-2.5" width="5" height="5">
-                  <div className="flex items-center justify-center w-full h-full">
-                    <TerrainIcon 
-                      size={16} 
-                      color="white" 
-                      strokeWidth={1.5}
-                    />
-                    {hex.resource && (
-                      <span className="absolute bottom-0 right-0 text-[0.5rem] text-white">
-                        {hex.resource.slice(0,2)}
-                      </span>
-                    )}
-                    {hex.city && (
-                      <span className="absolute top-0 left-0 text-[0.5rem] text-white">
-                        도
-                      </span>
-                    )}
-                  </div>
-                </foreignObject>
-              </Hexagon>
-            );
-          })}
-        </Layout>
-      </HexGrid>
+    <div style={{ position: 'relative' }}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        style={{ border: '2px solid #222', background: '#111', cursor: 'grab' }}
+        tabIndex={0}
+      />
     </div>
   );
 }
-
-// CityList: Cities tab
-function CityList({ cities }: { cities: City[] }) {
-  return (
-    <div className="p-4 h-full overflow-auto">
-      <h3 className="text-xl font-bold mb-4">도시 관리</h3>
-      <div className="space-y-4">
-        {cities.map(city => (
-          <div key={city.id} className="bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-2">
-              <h4 className="text-lg font-bold">{city.name}</h4>
-              <span className="text-sm px-2 py-1 bg-blue-900 rounded-full">인구: {city.population}</span>
-            </div>
-            <div className="text-gray-300 text-sm mb-3">
-              <p>생산: {city.production} ({city.turnsLeft}턴 남음)</p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-gray-700 p-2 rounded"><p>식량: +5/턴</p></div>
-              <div className="bg-gray-700 p-2 rounded"><p>생산력: +4/턴</p></div>
-              <div className="bg-gray-700 p-2 rounded"><p>금: +3/턴</p></div>
-              <div className="bg-gray-700 p-2 rounded"><p>과학: +2/턴</p></div>
-              <div className="bg-gray-700 p-2 rounded"><p>문화: +1/턴</p></div>
-              <div className="bg-gray-700 p-2 rounded"><p>신앙: +1/턴</p></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+import CityManagementPanel from "./CityManagementPanel";
+import ResearchPanel from "./research-management/ResearchPanel";
 
 // ResearchPanel: Research tab
-function ResearchPanel() {
-  return (
-    <div className="p-4 h-full overflow-auto">
-      <h3 className="text-xl font-bold mb-4">연구</h3>
-      <div className="bg-gray-800 rounded-lg p-4 mb-4">
-        <h4 className="text-lg font-bold mb-2">현재 연구: 농업</h4>
-        <div className="w-full bg-gray-700 h-4 rounded-full overflow-hidden">
-          <div className="bg-blue-600 h-full" style={{ width: '60%' }}></div>
-        </div>
-        <p className="text-right text-sm mt-1">2턴 남음</p>
-      </div>
-      <div className="space-y-3">
-        <h4 className="font-bold">다음 가능한 연구:</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">도자기</h5><p className="text-xs text-gray-400">4턴 소요</p></div>
-          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">동물 사육</h5><p className="text-xs text-gray-400">4턴 소요</p></div>
-          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">채광</h5><p className="text-xs text-gray-400">5턴 소요</p></div>
-          <div className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-700"><h5 className="font-bold">범선</h5><p className="text-xs text-gray-400">6턴 소요</p></div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
+import UnitPanel from "./unit-management/UnitPanel";
+import DiplomacyPanel from "./diplomacy-management/DiplomacyPanel";
+import ReligionPanel from "./religion-management/ReligionPanel";
+import PolicyPanel from "./policy-management/PolicyPanel";
 // UnitsPanel: Units tab
 function UnitsPanel() {
   return (
@@ -385,6 +604,8 @@ function LogPanel({ log, infoPanel, setInfoPanel, commandInput, setCommandInput,
 }
 
 export default function GamePage() {
+  const searchParams = useSearchParams();
+  const mapType = searchParams.get('map') || undefined; // 쿼리에서 map 파라미터 추출
   const router = useRouter();
   
   // 상태 관리
@@ -442,23 +663,87 @@ export default function GamePage() {
   
   // 성능 최적화된 hexagons 생성 로직
   const hexagons = useMemo(() => {
-    // 더 큰 육각형 그리드 생성 (대략 300개 근접)
+    // 지도 유형별 지형 분포를 달리 생성
+    const type = mapType || 'Continents';
     const generatedHexagons = GridGenerator.hexagon(12);
-    
-    return generatedHexagons.map(hex => ({
-      ...hex,
-      terrain: ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'][
-        Math.floor(Math.random() * 7)
-      ],
-      resource: Math.random() < 0.1 
-        ? ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'][
-            Math.floor(Math.random() * 6)
-          ]
-        : null,
-      city: Math.random() < 0.05 ? { name: '도시', population: 3 } : null,
-      unit: Math.random() < 0.05 ? 'settler' : null
-    }));
-  }, []);
+    // 랜덤 시드를 위해 Date.now() + mapType
+    const seed = `${Date.now()}-${type}`;
+    const noise2D = createNoise2D(seedrandom(seed));
+    // 중심 좌표
+    const centerQ = 0;
+    const centerR = 0;
+    // 도넛형 중앙 반지름
+    const donutRadius = 5;
+    return generatedHexagons.map(hex => {
+      const { q, r, s } = hex;
+      // noise 좌표 변환
+      const nx = (q + 20) / 18;
+      const ny = (r + 20) / 18;
+      const noise = noise2D(nx, ny);
+      let terrain = 'plains';
+      // 지도 유형별 분기
+      switch (type) {
+        case 'Pangaea':
+          terrain = Math.abs(q) + Math.abs(r) < 10 ? (noise > 0.3 ? 'forest' : 'grassland') : (noise > 0.2 ? 'hills' : 'ocean');
+          break;
+        case 'Fractal':
+          terrain = noise > 0.5 ? 'mountain' : noise > 0.2 ? 'forest' : noise > -0.1 ? 'plains' : 'ocean';
+          break;
+        case 'SmallContinents':
+          terrain = (Math.abs(q) % 8 < 5 && Math.abs(r) % 8 < 5 && noise > -0.2) ? (noise > 0.3 ? 'grassland' : 'plains') : 'ocean';
+          break;
+        case 'Terra':
+          // 왼쪽(구대륙)은 육지, 오른쪽(신대륙)은 바다 많음
+          terrain = q < 0 ? (noise > 0.2 ? 'grassland' : 'forest') : (noise > 0.5 ? 'plains' : 'ocean');
+          break;
+        case 'TiltedAxis':
+          terrain = Math.abs(r) < 6 ? (noise > 0.2 ? 'grassland' : 'plains') : (noise > 0.4 ? 'forest' : 'ocean');
+          break;
+        case 'InlandSea':
+          terrain = Math.sqrt(q * q + r * r) < 5 ? 'ocean' : (noise > 0.2 ? 'grassland' : 'plains');
+          break;
+        case 'Shuffle': {
+          // 임의로 다른 타입 중 하나를 선택
+          const types = ['Continents', 'Pangaea', 'Archipelago', 'Fractal', 'SmallContinents', 'Terra', 'TiltedAxis', 'InlandSea', 'Donut'];
+          const pick = types[Math.floor(Math.abs(noise) * types.length) % types.length];
+          // 재귀적으로 분기
+          return { ...hex, ...((() => {
+            switch (pick) {
+              case 'Pangaea':
+                return { terrain: Math.abs(q) + Math.abs(r) < 10 ? (noise > 0.3 ? 'forest' : 'grassland') : (noise > 0.2 ? 'hills' : 'ocean') };
+              case 'Archipelago':
+                return { terrain: noise > 0.55 ? 'grassland' : noise > 0.45 ? 'forest' : noise > 0.35 ? 'hills' : 'ocean' };
+              case 'Fractal':
+                return { terrain: noise > 0.5 ? 'mountain' : noise > 0.2 ? 'forest' : noise > -0.1 ? 'plains' : 'ocean' };
+              case 'SmallContinents':
+                return { terrain: (Math.abs(q) % 8 < 5 && Math.abs(r) % 8 < 5 && noise > -0.2) ? (noise > 0.3 ? 'grassland' : 'plains') : 'ocean' };
+              case 'Terra':
+                return { terrain: q < 0 ? (noise > 0.2 ? 'grassland' : 'forest') : (noise > 0.5 ? 'plains' : 'ocean') };
+              case 'TiltedAxis':
+                return { terrain: Math.abs(r) < 6 ? (noise > 0.2 ? 'grassland' : 'plains') : (noise > 0.4 ? 'forest' : 'ocean') };
+              case 'InlandSea':
+                return { terrain: Math.sqrt(q * q + r * r) < 5 ? 'ocean' : (noise > 0.2 ? 'grassland' : 'plains') };
+              case 'Donut':
+                return { terrain: (Math.sqrt(q * q + r * r) > donutRadius && Math.sqrt(q * q + r * r) < 10) ? (noise > 0.1 ? 'plains' : 'forest') : 'ocean' };
+              default:
+                return { terrain: noise > 0.3 ? 'grassland' : noise > 0 ? 'plains' : noise > -0.3 ? 'hills' : 'ocean' };
+            }
+          })()) };
+        }
+      }
+      return {
+        ...hex,
+        terrain,
+        resource: Math.random() < 0.1 
+          ? ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'][
+              Math.floor(Math.random() * 6)
+            ]
+          : null,
+        city: Math.random() < 0.05 ? { name: '도시', population: 3 } : null,
+        unit: Math.random() < 0.05 ? 'settler' : null
+      };
+    });
+  }, [mapType]);
   
   const getHexColor = useCallback((terrain: string) => {
     switch (terrain) {
@@ -574,59 +859,62 @@ export default function GamePage() {
   if (selectedTab === 'map') {
     tabContent = <MapPanel hexagons={hexagons} getHexColor={getHexColor} handleHexClick={handleHexClick} selectedHex={selectedHex} />;
   } else if (selectedTab === 'cities') {
-    tabContent = <CityList cities={cities} />;
+    tabContent = <CityManagementPanel cities={cities} />;
   } else if (selectedTab === 'research') {
     tabContent = <ResearchPanel />;
   } else if (selectedTab === 'units') {
-    tabContent = <UnitsPanel />;
+    tabContent = <UnitPanel />;
+  } else if (selectedTab === 'diplomacy') {
+    tabContent = <DiplomacyPanel />;
+  } else if (selectedTab === 'religion') {
+    tabContent = <ReligionPanel />;
+  } else if (selectedTab === 'policy') {
+    tabContent = <PolicyPanel />;
   } else {
     tabContent = <div>선택된 탭이 없습니다</div>;
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col">
-      {/* 상단 네비게이션 */}
-      <nav className="bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
-        <div className="flex items-center">
-          <Menu className="mr-2" size={24} />
-          <span className="font-bold text-lg">텍스트 문명</span>
-        </div>
-        <div className="flex space-x-6">
+    
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col">
+        {/* 상단 네비게이션 */}
+        <nav className="bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
           <div className="flex items-center">
-            <span className="font-bold">턴: {turn}</span>
+            <Menu className="mr-2" size={24} />
+            <span className="font-bold text-lg">텍스트 문명</span>
+          </div>
+          <div className="flex space-x-6">
+            <div className="flex items-center">
+              <span className="font-bold">턴: {turn}</span>
+            </div>
+            <div className="flex items-center">
+              <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
+            </div>
+            <button 
+              onClick={nextTurn}
+              className="bg-indigo-600 hover:bg-indigo-700 px-4 py-1 rounded font-bold"
+            >
+              다음 턴
+            </button>
           </div>
           <div className="flex items-center">
-            <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
+            <Settings className="ml-2" size={20} />
           </div>
-          <button 
-            onClick={nextTurn}
-            className="bg-indigo-600 hover:bg-indigo-700 px-4 py-1 rounded font-bold"
-          >
-            다음 턴
-          </button>
-        </div>
-        <div className="flex items-center">
-          <Settings className="ml-2" size={20} />
-        </div>
-      </nav>
-      
-      {/* 주요 자원 표시 */}
-      <ResourceBar resources={resources} />
-      
-      {/* 메인 콘텐츠 영역 - 고정된 높이로 분할 */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 탭 네비게이션 */}
-        <TabNavigation selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
-        
-        {/* 메인 콘텐츠 영역 */}
-        <div className="h-[90vh] flex-1 flex flex-col overflow-hidden">
-          {/* 상단 콘텐츠 영역 (고정된 높이) */}
-          <div className="h-full flex-1 overflow-auto">
-            {tabContent}
-          </div>
-          
-          {/* 로그 패널 (고정된 높이) */}
-          <div className="h-[20vh] min-h-[180px] max-h-[300px]">
+        </nav>
+        <div className="h-full flex-1 flex flex-row">
+          <TabNavigation selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
+          <div className="h-full flex-1 flex flex-col overflow-hidden">
+            {/* 상단 바/정보 패널 등 */}
+            <div className="flex-1 flex overflow-hidden">
+              {selectedTab === "map" && <MapPanel hexagons={hexagons} getHexColor={getHexColor} handleHexClick={handleHexClick} selectedHex={selectedHex} />}
+              {selectedTab === "cities" && <CityManagementPanel cities={cities} />}
+              {selectedTab === "research" && <ResearchPanel />}
+              {selectedTab === "units" && <UnitPanel />}
+              {selectedTab === "diplomacy" && <DiplomacyPanel />}
+              {selectedTab === "religion" && <ReligionPanel />}
+              {selectedTab === "policy" && <PolicyPanel />}
+              {selectedTab === "turn" && <TurnManager />}
+            </div>
             <LogPanel 
               log={log} 
               infoPanel={infoPanel} 
@@ -638,6 +926,5 @@ export default function GamePage() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
