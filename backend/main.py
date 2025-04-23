@@ -6,7 +6,7 @@ import os
 
 # 내부 모듈 임포트
 from routers import game, map, city, unit, research, policy, religion, diplomacy
-from db.database import init_db
+from core.config import setup_app
 
 # 환경 변수 로드
 load_dotenv()
@@ -40,7 +40,7 @@ app.include_router(diplomacy.router, prefix="/api/diplomacy", tags=["외교"])
 @app.on_event("startup")
 async def startup_event():
     """애플리케이션 시작 시 실행되는 이벤트 핸들러"""
-    await init_db()
+    await setup_app()
 
 @app.get("/")
 async def root():
@@ -50,8 +50,3 @@ async def root():
         "version": "0.1.0",
         "status": "운영 중"
     }
-
-# 직접 실행 시 uvicorn 서버 시작
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
