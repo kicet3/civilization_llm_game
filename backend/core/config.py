@@ -2,11 +2,21 @@ import os
 from pydantic_settings import BaseSettings
 from prisma import Prisma
 
+# Prisma 클라이언트를 모듈 레벨에서 생성
+prisma_client = Prisma()
+
 class Settings(BaseSettings):
     """애플리케이션 설정"""
     APP_NAME: str = "텍스트 문명 (Text Civilization) API"
     APP_VERSION: str = "0.1.0"
     
+    # 데이터베이스 설정
+    DB_PASSWORD: str = ""
+    DB_NAME: str = ""
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    
+    # 디버그 설정 추가 (기본값은 False)
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # 게임 설정
     DEFAULT_MAP_WIDTH: int = 20
@@ -15,18 +25,13 @@ class Settings(BaseSettings):
     # API 설정
     API_PREFIX: str = "/api"
     
-    # 기타 설정
-    DEBUG: bool = os.getenv("DEBUG", "False") == "True"
-    
     class Config:
         env_file = ".env"
+        extra = 'allow'
         case_sensitive = True
 
 # 설정 인스턴스 생성
 settings = Settings()
-
-# Prisma 클라이언트
-prisma_client = Prisma()
 
 async def setup_app():
     """애플리케이션 초기화"""

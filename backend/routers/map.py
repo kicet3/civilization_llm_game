@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any
 from prisma.models import Hexagon, Terrain, Resource
-from ..models.map import MapResponse, TileResponse, TileSelectRequest
-from ..core.config import prisma_client
+# 상대 경로 대신 절대 경로 사용
+from models.map import MapResponse, TileResponse, TileSelectRequest
+from core.config import prisma_client
 
 router = APIRouter()
 

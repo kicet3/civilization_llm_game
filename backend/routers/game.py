@@ -1,54 +1,70 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from enum import Enum
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Dict, Any
+from models.game import GameSessionCreate, GameSessionResponse, GameState
+from core.config import prisma_client
 
-class DiplomaticStatus(str, Enum):
-    """외교 상태 enum"""
-    WAR = "전쟁"
-    PEACE = "평화"
-    ALLIANCE = "동맹"
-    DEFENSIVE_PACT = "방어 협약"
-    OPEN_BORDERS = "국경 개방"
-    DENOUNCED = "비난"
-    DECLARED_FRIEND = "우호 선언"
+# APIRouter 생성
+router = APIRouter()
 
-class DiplomaticCommand(str, Enum):
-    """외교 명령 enum"""
-    DECLARE_WAR = "declare_war"
-    MAKE_PEACE = "make_peace"
-    PROPOSE_ALLIANCE = "propose_alliance"
-    PROPOSE_DEFENSIVE_PACT = "propose_defensive_pact"
-    PROPOSE_OPEN_BORDERS = "propose_open_borders"
-    DENOUNCE = "denounce"
-    DECLARE_FRIENDSHIP = "declare_friendship"
-    TRADE = "trade"
+@router.post("/start", response_model=GameSessionResponse)
+async def create_game_session(request: GameSessionCreate):
+    """새로운 게임 세션 생성"""
+    try:
+        # 게임 세션 생성 로직 구현
+        game_session = await prisma_client.gamesession.create(
+            data={
+                "host_user_id": 1,  # 임시 사용자 ID, 실제로는 인증된 사용자 ID 사용
+                "map_type": request.mapType,
+                "seed": int(time.time() * 1000),  # 랜덤 시드 생성
+                "current_turn": 1,
+                "status": "ongoing",
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+        )
+        
+        # 게임 세션 응답 생성
+        return GameSessionResponse(
+            id=game_session.id,
+            playerName=request.playerName,
+            mapType=game_session.map_type,
+            difficulty=request.difficulty,
+            currentTurn=game_session.current_turn,
+            gameSpeed=request.gameSpeed,
+            createdAt=game_session.created_at,
+            updatedAt=game_session.updated_at
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"게임 세션 생성 중 오류 발생: {str(e)}"
+        )
 
-class DiplomacyState(BaseModel):
-    """외교 상태 응답 모델"""
-    civs: List[Dict[str, Any]] = []
-    cityStates: List[Dict[str, Any]] = []
-    relations: Dict[str, Dict[str, Any]] = {}
-
-class CivResponse(BaseModel):
-    """문명 정보 응답 모델"""
-    id: str
-    name: str
-    leader: str
-    status: str
-    relationValue: int = 0
-    treats: List[Dict[str, Any]] = []
-
-class CityStateResponse(BaseModel):
-    """도시국가 정보 응답 모델"""
-    id: str
-    name: str
-    type: str
-    influence: int = 0
-    isAllied: bool = False
-
-class DiplomacyCommandRequest(BaseModel):
-    """외교 명령 요청 모델"""
-    gameId: str
-    targetId: str
-    command: DiplomaticCommand
-    details: Optional[Dict[str, Any]] = None
+# 다른 게임 관련 엔드포인트들 추가 가능
+@router.get("/state", response_model=GameState)
+async def get_game_state(gameId: str):
+    """게임 상태 조회"""
+    try:
+        game_session = await prisma_client.gamesession.find_unique(
+            where={"id": gameId}
+        )
+        
+        if not game_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="게임 세션을 찾을 수 없습니다"
+            )
+        
+        # 게임 상태 응답 생성
+        return GameState(
+            gameId=game_session.id,
+            currentTurn=game_session.current_turn,
+            # 다른 필요한 상태 정보 추가
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"게임 상태 조회 중 오류 발생: {str(e)}"
+        )

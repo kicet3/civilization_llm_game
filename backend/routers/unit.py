@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Any
 from prisma.models import Unit, UnitType
-from ..models.unit import UnitResponse, UnitMoveRequest, UnitCommandRequest, UnitCommand
-from ..core.config import prisma_client
+from models.unit import UnitResponse, UnitMoveRequest, UnitCommandRequest, UnitCommand
+from core.config import prisma_client
 
 router = APIRouter()
 

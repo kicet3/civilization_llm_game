@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 
 # 내부 모듈 임포트
-from routers import game, map, city, unit, research, policy, religion, diplomacy
+from routers import game, map, city, unit, research
 from core.config import setup_app
 
 # 환경 변수 로드
@@ -33,9 +33,9 @@ app.include_router(map.router, prefix="/api/map", tags=["맵/타일"])
 app.include_router(city.router, prefix="/api/city", tags=["도시"])
 app.include_router(unit.router, prefix="/api/unit", tags=["유닛"])
 app.include_router(research.router, prefix="/api/research", tags=["연구/기술"])
-app.include_router(policy.router, prefix="/api/policy", tags=["정책"])
-app.include_router(religion.router, prefix="/api/religion", tags=["종교"])
-app.include_router(diplomacy.router, prefix="/api/diplomacy", tags=["외교"])
+# app.include_router(policy.router, prefix="/api/policy", tags=["정책"])
+# app.include_router(religion.router, prefix="/api/religion", tags=["종교"])
+# app.include_router(diplomacy.router, prefix="/api/diplomacy", tags=["외교"])
 
 @app.on_event("startup")
 async def startup_event():
