@@ -1,17 +1,24 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { HexGrid, Layout, Hexagon, Text } from 'react-hexgrid';
 import { cn } from '@/lib/utils';
-import { Menu, MessageSquare, Settings, Map, Book, Beaker, Users, Sword, Award, ChevronUp, ChevronDown, User, PanelLeft, Send, ZoomIn, ZoomOut, Move, Home } from 'lucide-react';
-import './hex-map.css'; 
+import { 
+  Menu, MessageSquare, Settings, Map, Book, 
+  Beaker, Users, Sword, Award, ChevronUp, 
+  ChevronDown, User, PanelLeft, Send, 
+  ZoomIn, ZoomOut, Move, Home 
+} from 'lucide-react';
 
 export default function GamePage() {
+  const router = useRouter();
   const [turn, setTurn] = useState(1);
   const [year, setYear] = useState(-4000);
-  const [mapSize] = useState({ width: 15, height: 12 }); // 육각형 타일에 맞게 크기 조정
-  const [mapTiles, setMapTiles] = useState([]);
+  const [mapSize] = useState({ width: 15, height: 12 });
+  const [hexagons, setHexagons] = useState([]);
   const [selectedTab, setSelectedTab] = useState('map');
-  const [selectedTile, setSelectedTile] = useState(null);
+  const [selectedHex, setSelectedHex] = useState(null);
   const [resources, setResources] = useState({
     food: 12,
     production: 8,
@@ -30,87 +37,54 @@ export default function GamePage() {
   ]);
   const [commandInput, setCommandInput] = useState('');
   const [infoPanel, setInfoPanel] = useState({ open: false, type: null, data: null });
-  
-  // 지도 관련 상태
-  const [mapTransform, setMapTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const mapContainerRef = useRef(null);
 
-  // 맵 생성
+  // 육각형 지도 생성
   useEffect(() => {
-    generateHexMap();
-  }, []);
-
-  // 육각형 타일 맵 생성 함수
-  const generateHexMap = () => {
-    const terrainTypes = ['grassland', 'plains', 'desert', 'tundra', 'mountain', 'ocean', 'forest', 'hills', 'jungle'];
-    const newMapTiles = [];
+    const terrainTypes = ['grassland', 'plains', 'desert', 'mountain', 'ocean', 'forest', 'hills'];
+    const newHexagons = [];
     
-    // 육각형 타일의 중심점 위치를 계산하기 위한 상수
-    const hexHeight = 80; // 육각형 높이
-    const hexWidth = Math.sqrt(3)/2 * hexHeight; // 육각형 너비
-    
-    for (let y = 0; y < mapSize.height; y++) {
-      for (let x = 0; x < mapSize.width; x++) {
-        // 가장자리는 물로 설정
-        let terrain = 'grassland';
-        if (x === 0 || y === 0 || x === mapSize.width - 1 || y === mapSize.height - 1) {
-          terrain = 'ocean';
-        } else {
-          // 랜덤 지형 생성
-          const randIdx = Math.floor(Math.random() * 100);
-          if (randIdx < 40) terrain = 'grassland';
-          else if (randIdx < 65) terrain = 'plains';
-          else if (randIdx < 75) terrain = 'forest';
-          else if (randIdx < 82) terrain = 'hills';
-          else if (randIdx < 88) terrain = 'desert';
-          else if (randIdx < 94) terrain = 'tundra';
-          else if (randIdx < 97) terrain = 'jungle';
-          else terrain = 'mountain';
-        }
+    for (let q = 0; q < mapSize.width; q++) {
+      for (let r = 0; r < mapSize.height; r++) {
+        const s = -(q + r);
+        
+        // 지형 랜덤 선택
+        const terrain = terrainTypes[Math.floor(Math.random() * terrainTypes.length)];
         
         // 자원 추가 (10% 확률)
         const hasResource = Math.random() < 0.1;
         let resource = null;
         if (hasResource) {
-          const resources = ['iron', 'horses', 'coal', 'oil', 'uranium', 'wheat', 'cattle', 'sheep', 'deer', 'banana', 'gems', 'gold', 'silver'];
+          const resources = ['iron', 'horses', 'wheat', 'cattle', 'deer', 'gold'];
           resource = resources[Math.floor(Math.random() * resources.length)];
         }
+
+        // 시작 위치에 도시와 정착민 배치
+        const isCapital = q === Math.floor(mapSize.width / 2) && r === Math.floor(mapSize.height / 2);
         
-        // 육각형 그리드에서의 x, y 좌표 계산
-        // 짝수 행에서는 x좌표가 일반적인 그리드와 일치하지만,
-        // 홀수 행에서는 x좌표가 0.5칸 오른쪽으로 오프셋 됨
-        const posX = x * hexWidth + (y % 2) * (hexWidth / 2);
-        const posY = y * (hexHeight * 0.75);
-        
-        newMapTiles.push({
-          id: `${x}-${y}`,
-          gridX: x,
-          gridY: y,
-          x: posX,
-          y: posY,
+        newHexagons.push({
+          q, r, s,
           terrain,
           resource,
-          improvement: null,
-          unit: (x === Math.floor(mapSize.width / 2) && y === Math.floor(mapSize.height / 2)) ? 'settler' : null, // 시작 유닛
-          city: (x === Math.floor(mapSize.width / 2) && y === Math.floor(mapSize.height / 2 - 1)) ? { name: '수도', size: 3 } : null // 시작 도시
+          city: isCapital ? { name: '수도', population: 3 } : null,
+          unit: isCapital ? 'settler' : null
         });
       }
     }
     
-    setMapTiles(newMapTiles);
-    
-    // 중앙으로 초기 위치 설정
-    const mapContainer = mapContainerRef.current;
-    if (mapContainer) {
-      const containerWidth = mapContainer.clientWidth;
-      const containerHeight = mapContainer.clientHeight;
-      setMapTransform({
-        x: containerWidth / 2,
-        y: containerHeight / 2,
-        scale: 1
-      });
+    setHexagons(newHexagons);
+  }, []);
+
+  // 육각형 색상 매핑
+  const getHexColor = (terrain) => {
+    switch (terrain) {
+      case 'grassland': return 'green';
+      case 'plains': return 'yellow';
+      case 'desert': return 'orange';
+      case 'mountain': return 'gray';
+      case 'ocean': return 'blue';
+      case 'forest': return 'darkgreen';
+      case 'hills': return 'lightgreen';
+      default: return 'gray';
     }
   };
 
@@ -193,87 +167,14 @@ export default function GamePage() {
     setCommandInput('');
   };
 
-  // 타일 선택 처리
-  const handleTileClick = (tile) => {
-    setSelectedTile(tile.id === selectedTile ? null : tile.id);
-    setInfoPanel({ open: true, type: 'tile', data: tile });
-  };
-
-  // 지도 드래그 시작
-  const handleMapDragStart = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-    
-    // 마우스 또는 터치 이벤트에 따라 시작 위치 설정
-    if (e.type === 'mousedown') {
-      setDragStart({
-        x: e.clientX - mapTransform.x,
-        y: e.clientY - mapTransform.y
-      });
-    } else if (e.type === 'touchstart' && e.touches.length === 1) {
-      setDragStart({
-        x: e.touches[0].clientX - mapTransform.x,
-        y: e.touches[0].clientY - mapTransform.y
-      });
-    }
-  };
-
-  // 지도 드래그 중
-  const handleMapDrag = (e) => {
-    if (!isDragging) return;
-    e.preventDefault();
-    
-    let newX, newY;
-    
-    // 마우스 또는 터치 이벤트에 따라 새 위치 계산
-    if (e.type === 'mousemove') {
-      newX = e.clientX - dragStart.x;
-      newY = e.clientY - dragStart.y;
-    } else if (e.type === 'touchmove' && e.touches.length === 1) {
-      newX = e.touches[0].clientX - dragStart.x;
-      newY = e.touches[0].clientY - dragStart.y;
-    } else {
-      return;
-    }
-    
-    setMapTransform(prev => ({
-      ...prev,
-      x: newX,
-      y: newY
-    }));
-  };
-
-  // 지도 드래그 종료
-  const handleMapDragEnd = () => {
-    setIsDragging(false);
-  };
-
-  // 지도 확대/축소
-  const handleZoom = (factor) => {
-    setMapTransform(prev => {
-      const newScale = prev.scale * factor;
-      // 확대/축소 한계 설정
-      if (newScale < 0.5 || newScale > 2) return prev;
-      
-      return {
-        ...prev,
-        scale: newScale
-      };
+  // 육각형 클릭 핸들러
+  const handleHexClick = (hex) => {
+    setSelectedHex(hex);
+    setInfoPanel({ 
+      open: true, 
+      type: 'tile', 
+      data: hex 
     });
-  };
-
-  // 지도 중앙 정렬
-  const centerMap = () => {
-    const mapContainer = mapContainerRef.current;
-    if (mapContainer) {
-      const containerWidth = mapContainer.clientWidth;
-      const containerHeight = mapContainer.clientHeight;
-      setMapTransform({
-        x: containerWidth / 2,
-        y: containerHeight / 2,
-        scale: 1
-      });
-    }
   };
 
   // 탭 컨텐츠 렌더링
@@ -281,88 +182,40 @@ export default function GamePage() {
     switch (selectedTab) {
       case 'map':
         return (
-          <div 
-            ref={mapContainerRef}
-            className="w-full h-full overflow-hidden relative"
-            onMouseDown={handleMapDragStart}
-            onMouseMove={handleMapDrag}
-            onMouseUp={handleMapDragEnd}
-            onMouseLeave={handleMapDragEnd}
-            onTouchStart={handleMapDragStart}
-            onTouchMove={handleMapDrag}
-            onTouchEnd={handleMapDragEnd}
-          >
-            {/* 지도 컨트롤 버튼 */}
-            <div className="map-controls">
-              <button 
-                className="control-button"
-                onClick={() => handleZoom(1.2)}
+          <div className="flex-1 relative overflow-hidden">
+            <HexGrid width={1200} height={800}>
+              <Layout 
+                size={{ x: 30, y: 30 }} 
+                flat={false} 
+                spacing={1.1} 
+                origin={{ x: 0, y: 0 }}
               >
-                <ZoomIn size={20} />
-              </button>
-              <button 
-                className="control-button"
-                onClick={() => handleZoom(0.8)}
-              >
-                <ZoomOut size={20} />
-              </button>
-              <button 
-                className="control-button"
-                onClick={centerMap}
-              >
-                <Home size={20} />
-              </button>
-            </div>
-            
-            {/* 육각형 타일 지도 */}
-            <div 
-              className="hex-grid absolute"
-              style={{ 
-                transform: `translate(${mapTransform.x}px, ${mapTransform.y}px) scale(${mapTransform.scale})`,
-                transformOrigin: 'center',
-                transition: isDragging ? 'none' : 'transform 0.1s ease-out'
-              }}
-            >
-              {mapTiles.map((tile) => (
-                <div 
-                  key={tile.id}
-                  className={cn(
-                    "hex-tile",
-                    `terrain-${tile.terrain}`,
-                    selectedTile === tile.id && "selected"
-                  )}
-                  style={{
-                    left: `${tile.x - (mapSize.width * 40)}px`,
-                    top: `${tile.y - (mapSize.height * 60)}px`,
-                  }}
-                  onClick={() => handleTileClick(tile)}
-                >
-                  {/* 유닛 */}
-                  {tile.unit && (
-                    <div className="unit-marker">
-                      {tile.unit === 'settler' && <User size={14} className="text-white" />}
-                    </div>
-                  )}
-                  
-                  {/* 도시 */}
-                  {tile.city && (
-                    <div className="city-marker">
-                      <div className="bg-red-700 rounded-full w-1/2 h-1/2 border-2 border-white"></div>
-                    </div>
-                  )}
-                  
-                  {/* 자원 */}
-                  {tile.resource && (
-                    <div className="resource-marker"></div>
-                  )}
-                  
-                  {/* 타일 좌표 (디버그용) */}
-                  {/* <div className="text-xs font-bold text-center text-white drop-shadow-md">
-                    {tile.gridX},{tile.gridY}
-                  </div> */}
-                </div>
-              ))}
-            </div>
+                {hexagons.map((hex, index) => (
+                  <Hexagon 
+                    key={index} 
+                    q={hex.q} 
+                    r={hex.r} 
+                    s={hex.s}
+                    fill={getHexColor(hex.terrain)}
+                    onClick={() => handleHexClick(hex)}
+                    className={cn(
+                      "transition-all duration-200 hover:opacity-80",
+                      selectedHex === hex ? "border-2 border-white" : ""
+                    )}
+                  >
+                    {hex.city && (
+                      <Text className="text-white text-xs">{hex.city.name}</Text>
+                    )}
+                    {hex.unit && (
+                      <Text className="text-white text-xs">settlers</Text>
+                    )}
+                    {hex.resource && (
+                      <Text className="text-white text-xs">{hex.resource}</Text>
+                    )}
+                  </Hexagon>
+                ))}
+              </Layout>
+            </HexGrid>
           </div>
         );
       case 'cities':
@@ -617,12 +470,11 @@ export default function GamePage() {
                       </button>
                     </div>
                     <div className="text-sm space-y-1">
-                      <p>위치: ({infoPanel.data.gridX}, {infoPanel.data.gridY})</p>
+                      <p>위치: ({infoPanel.data.q}, {infoPanel.data.r})</p>
                       <p>지형: {infoPanel.data.terrain}</p>
                       {infoPanel.data.resource && <p>자원: {infoPanel.data.resource}</p>}
-                      {infoPanel.data.improvement && <p>개발: {infoPanel.data.improvement}</p>}
+                      {infoPanel.data.city && <p>도시: {infoPanel.data.city.name} (인구: {infoPanel.data.city.population})</p>}
                       {infoPanel.data.unit && <p>유닛: {infoPanel.data.unit}</p>}
-                      {infoPanel.data.city && <p>도시: {infoPanel.data.city.name} (인구: {infoPanel.data.city.size})</p>}
                     </div>
                     {infoPanel.data.unit && (
                       <div className="mt-3 space-x-2">
