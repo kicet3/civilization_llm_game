@@ -467,7 +467,7 @@ const renderInitialChoice = () => {
                 ) : (
                   <>
                     <Lock size={20} className="mr-2" />
-                    인증하기
+                    시작하기
                   </>
                 )}
               </button>
