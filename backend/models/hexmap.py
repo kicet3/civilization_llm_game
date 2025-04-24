@@ -31,6 +31,7 @@ class ResourceType(str, Enum):
     GEMS = "gems"
     MARBLE = "marble"
     NONE = "none"
+    FISH = "fish"
 
 class HexCoord(BaseModel):
     """육각형 타일 좌표"""

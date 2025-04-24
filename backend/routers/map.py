@@ -1,202 +1,268 @@
-import uuid
+from fastapi import APIRouter, HTTPException, status
+from typing import List, Dict, Any
+from models.hexmap import HexTile, TerrainType, ResourceType, GameMapState, HexCoord, Civilization
 import random
-from fastapi import APIRouter, HTTPException, status, Depends
-from typing import List, Dict, Any, Set, Tuple
-
-from models.hexmap import (
-    HexTile, HexCoord, TerrainType, ResourceType, 
-    MapInitRequest, GameMapState, Civilization
-)
-from utils.map_utils import (
-    cube_distance, get_ring, get_spiral, 
-    get_terrain_distribution, get_resource_by_terrain,
-    find_suitable_starting_positions, initialize_resources
-)
-from models.game import GameSessionCreate, GameSessionResponse
-from core.config import prisma_client
+import math
 
 router = APIRouter()
 
-@router.post("/init/{game_id}", response_model=GameMapState)
-async def initialize_map(game_id: str, request: MapInitRequest):
-    """게임 맵 초기화 API"""
-    try:
-        # 1. 타일 그리드 생성
-        tiles = []
-        width, height = request.width, request.height
-        
-        # 헥사곤 타일 생성 (원점 중심 그리드)
-        for q in range(-width//2, width//2 + 1):
-            for r in range(-height//2, height//2 + 1):
-                s = -q - r
-                # 유효한 큐브 좌표만 추가 (q + r + s = 0)
-                if abs(s) <= height//2:
-                    tiles.append(
-                        HexTile(
-                            q=q,
-                            r=r,
-                            s=s,
-                            terrain=TerrainType.PLAINS,  # 임시 기본값
-                            resource=ResourceType.NONE,
-                            visible=False,
-                            explored=False
-                        )
-                    )
-        
-        # 2. 지형 타입 분포 설정
-        terrain_distribution = get_terrain_distribution(request.map_type)
-        terrain_types = list(terrain_distribution.keys())
-        terrain_weights = [terrain_distribution[t] for t in terrain_types]
-        
-        # 3. 지형 분포 적용
-        # 외곽은 물/바다 확률 높게, 중앙은 육지 확률 높게
-        center = HexCoord(q=0, r=0, s=0)
-        max_distance = max(width, height) // 2
-        
-        for i, tile in enumerate(tiles):
-            tile_coord = HexCoord(q=tile.q, r=tile.r, s=tile.s)
-            distance = cube_distance(center, tile_coord)
+@router.get("/data")
+async def get_map_data():
+    """내륙 바다(Inland Sea) 형태의 맵 데이터 반환"""
+    # 맵 크기 설정
+    width = 21
+    height = 19
+    
+    # 내륙 바다 맵 생성
+    hexagons = generate_inland_sea_map(width, height)
+    
+    # 문명 정보 - 한국(플레이어) + 5개 AI 문명
+    civilizations = [
+        Civilization(
+            name="Korea",
+            capital_tile=HexCoord(q=4, r=3),
+            units=["warrior-1", "settler-1"]
+        ),
+        Civilization(
+            name="Japan",
+            capital_tile=HexCoord(q=16, r=3),
+            units=["warrior-2"]
+        ),
+        Civilization(
+            name="China",
+            capital_tile=HexCoord(q=4, r=15),
+            units=["warrior-3"]
+        ),
+        Civilization(
+            name="Mongolia",
+            capital_tile=HexCoord(q=16, r=15),
+            units=["warrior-4"]
+        ),
+        Civilization(
+            name="Russia",
+            capital_tile=HexCoord(q=10, r=2),
+            units=["warrior-5"]
+        ),
+        Civilization(
+            name="Rome",
+            capital_tile=HexCoord(q=10, r=16),
+            units=["warrior-6"]
+        ),
+    ]
+    
+    # 게임 맵 상태 생성
+    game_map_state = GameMapState(
+        tiles=hexagons,
+        civs=civilizations,
+        turn=1,
+        game_id="inland_sea_map"
+    )
+    
+    return {"hexagons": hexagons}
+
+
+def generate_inland_sea_map(width: int, height: int) -> List[HexTile]:
+    """내륙 바다 맵 생성 함수"""
+    hexagons = []
+    
+    # 중심점 계산
+    center_q = width // 2
+    center_r = height // 2
+    
+    # 내륙 바다 반경
+    sea_radius = min(width, height) // 3
+    
+    # 문명 시작 위치 정의
+    civ_positions = {
+        "Korea": {"q": 4, "r": 3, "city_id": "city_korea", "unit_id": "warrior-1", "unit_q": 5, "unit_r": 3},
+        "Japan": {"q": 16, "r": 3, "city_id": "city_japan", "unit_id": "warrior-2", "unit_q": 17, "unit_r": 3},
+        "China": {"q": 4, "r": 15, "city_id": "city_china", "unit_id": "warrior-3", "unit_q": 5, "unit_r": 15},
+        "Mongolia": {"q": 16, "r": 15, "city_id": "city_mongolia", "unit_id": "warrior-4", "unit_q": 17, "unit_r": 15},
+        "Russia": {"q": 10, "r": 2, "city_id": "city_russia", "unit_id": "warrior-5", "unit_q": 11, "unit_r": 2},
+        "Rome": {"q": 10, "r": 16, "city_id": "city_rome", "unit_id": "warrior-6", "unit_q": 11, "unit_r": 16}
+    }
+    
+    # 각 타일 생성
+    for q in range(width):
+        for r in range(height):
+            s = -q - r  # 큐브 좌표 제약: q + r + s = 0
             
-            # 외곽에 가까울수록 해양 확률 증가
-            edge_factor = distance / max_distance
-            
-            if edge_factor > 0.8 and random.random() < 0.7:  # 외곽 70% 확률로 바다
-                tiles[i].terrain = TerrainType.OCEAN
-            elif edge_factor > 0.65 and random.random() < 0.4:  # 외곽 근처 40% 확률로 바다
-                tiles[i].terrain = TerrainType.OCEAN
-            else:
-                # 나머지 지형은 분포에 따라 설정
-                # 해양은 이미 처리했으므로 제외
-                land_types = [t for t in terrain_types if t != TerrainType.OCEAN]
-                land_weights = [terrain_distribution[t] for t in land_types]
-                # 확률 정규화
-                land_weights = [w/sum(land_weights) for w in land_weights]
-                
-                tiles[i].terrain = random.choices(land_types, weights=land_weights)[0]
-        
-        # 4. 자원 배치 (전체 육지 타일의 10% 정도)
-        tiles = initialize_resources(tiles, resource_percentage=0.1)
-        
-        # 5. 시작 위치 설정 
-        # 플레이어 위치 중앙(0,0,0)에 고정
-        player_position = HexCoord(q=0, r=0, s=0)
-        
-        # 플레이어 위치 타일이 육지가 아니면 강제로 변경
-        player_tile_idx = next(i for i, t in enumerate(tiles) 
-                              if t.q == player_position.q and t.r == player_position.r)
-        
-        # 플레이어 위치 타일을 항상 평원이나 초원으로 설정
-        tiles[player_tile_idx].terrain = random.choice(
-            [TerrainType.PLAINS, TerrainType.GRASSLAND]
-        )
-        tiles[player_tile_idx].resource = ResourceType.NONE  # 자원 없음
-        tiles[player_tile_idx].occupant = request.player_civ
-        tiles[player_tile_idx].city_id = f"{request.player_civ}_capital"
-        tiles[player_tile_idx].visible = True
-        tiles[player_tile_idx].explored = True
-        
-        # 주변 타일 탐험 상태로 설정 (시야 2칸)
-        for dist in range(1, 3):
-            ring_tiles = get_ring(player_position, dist)
-            for ring_tile in ring_tiles:
-                matching_idx = next((i for i, t in enumerate(tiles) 
-                                   if t.q == ring_tile.q and t.r == ring_tile.r), None)
-                if matching_idx is not None:
-                    tiles[matching_idx].explored = True
-                    if dist == 1:  # 1칸 거리는 가시 범위
-                        tiles[matching_idx].visible = True
-        
-        # 6. AI 문명 배치
-        ai_positions = find_suitable_starting_positions(
-            tiles, 
-            player_position, 
-            len(request.ai_civs),
-            min_distance=5,  # 플레이어로부터 최소 거리
-            width=width,
-            height=height
-        )
-        
-        # 각 AI 문명을 위치에 배치
-        for i, ai_civ in enumerate(request.ai_civs):
-            if i < len(ai_positions):
-                pos = ai_positions[i]
-                ai_tile_idx = next(idx for idx, t in enumerate(tiles) 
-                                  if t.q == pos.q and t.r == pos.r)
-                
-                # AI 위치 타일을 항상 육지로 설정
-                tiles[ai_tile_idx].terrain = random.choice(
-                    [TerrainType.PLAINS, TerrainType.GRASSLAND]
-                )
-                tiles[ai_tile_idx].resource = ResourceType.NONE  # 자원 없음
-                tiles[ai_tile_idx].occupant = ai_civ
-                tiles[ai_tile_idx].city_id = f"{ai_civ}_capital"
-        
-        # 7. 문명 정보 구성
-        civilizations = [
-            Civilization(
-                name=request.player_civ,
-                capital_tile=player_position,
-                units=[]  # 초기 유닛 ID 목록 (실제로는 DB에서 생성 후 참조)
+            # 중심점으로부터의 거리 계산
+            distance = max(
+                abs(q - center_q),
+                abs(r - center_r),
+                abs(s - (-center_q - center_r))
             )
-        ]
-        
-        for i, ai_civ in enumerate(request.ai_civs):
-            if i < len(ai_positions):
-                civilizations.append(
-                    Civilization(
-                        name=ai_civ,
-                        capital_tile=ai_positions[i],
-                        units=[]
-                    )
+            
+            # 내륙 바다 영역 판단 (중심에 바다)
+            is_sea = distance < sea_radius
+            
+            # 맵 가장자리 설정 (대양)
+            is_edge = q == 0 or r == 0 or q == width - 1 or r == height - 1
+            
+            # 지형 결정 (내륙 바다, 해안, 육지)
+            if is_edge:
+                # 가장자리는 산
+                terrain = TerrainType.MOUNTAIN
+                resource = None
+                explored = False
+                visible = False
+            elif is_sea:
+                # 중앙 내륙 바다
+                terrain = TerrainType.OCEAN if distance < sea_radius - 1 else TerrainType.COAST
+                resource = ResourceType.FISH if random.random() < 0.2 and terrain == TerrainType.COAST else None
+                explored = random.random() < 0.3
+                visible = random.random() < 0.2 and explored
+            else:
+                # 육지 지형 랜덤 선택
+                land_terrains = [
+                    TerrainType.PLAINS, TerrainType.GRASSLAND, 
+                    TerrainType.HILLS, TerrainType.FOREST,
+                    TerrainType.DESERT
+                ]
+                terrain_weights = [0.3, 0.3, 0.15, 0.15, 0.1]  # 지형별 확률
+                terrain = random.choices(land_terrains, weights=terrain_weights)[0]
+                
+                # 자원 배치 (20% 확률)
+                if random.random() < 0.2:
+                    if terrain == TerrainType.PLAINS:
+                        resource = random.choice([ResourceType.WHEAT, ResourceType.HORSES, None, None])
+                    elif terrain == TerrainType.GRASSLAND:
+                        resource = random.choice([ResourceType.CATTLE, ResourceType.SHEEP, None, None])
+                    elif terrain == TerrainType.HILLS:
+                        resource = random.choice([ResourceType.IRON, ResourceType.COAL, None, None])
+                    elif terrain == TerrainType.FOREST:
+                        resource = None
+                    elif terrain == TerrainType.DESERT:
+                        resource = random.choice([ResourceType.GOLD, None, None])
+                    else:
+                        resource = None
+                else:
+                    resource = None
+                
+                # 가시성/탐험 상태
+                distance_from_center = distance - sea_radius
+                explored = random.random() < (0.8 - distance_from_center * 0.1)
+                visible = random.random() < (0.6 - distance_from_center * 0.1) and explored
+            
+            # 헥스 타일 생성
+            hexagon = HexTile(
+                q=q,
+                r=r,
+                s=s,
+                terrain=terrain,
+                resource=resource,
+                visible=False,  # 기본값: 보이지 않음
+                explored=False   # 기본값: 탐험되지 않음
+            )
+            
+            # 문명 시작 위치에 도시와 유닛 배치
+            for civ_name, pos in civ_positions.items():
+                # 도시 위치
+                if q == pos["q"] and r == pos["r"]:
+                    hexagon.city_id = pos["city_id"]
+                    hexagon.occupant = civ_name
+                    hexagon.terrain = TerrainType.PLAINS  # 도시는 평원에 위치
+                    # 플레이어(한국)만 초기에 볼 수 있음
+                    if civ_name == "Korea":
+                        hexagon.visible = True
+                        hexagon.explored = True
+                    else:
+                        hexagon.visible = False
+                        hexagon.explored = False
+                
+                # 유닛 위치
+                if q == pos["unit_q"] and r == pos["unit_r"]:
+                    hexagon.unit_id = pos["unit_id"]
+                    hexagon.occupant = civ_name
+                    # 플레이어(한국)만 초기에 볼 수 있음
+                    if civ_name == "Korea":
+                        hexagon.visible = True
+                        hexagon.explored = True
+                    else:
+                        hexagon.visible = False
+                        hexagon.explored = False
+            
+            # 문명 시작 주변 지형 조정 (평원, 초원, 숲 등으로 적절히 배치)
+            for civ_name, pos in civ_positions.items():
+                # 도시 근처 타일(2칸 이내)은 적절한 지형으로 설정
+                dist_to_city = max(
+                    abs(q - pos["q"]), 
+                    abs(r - pos["r"]), 
+                    abs(s - (-pos["q"] - pos["r"]))
                 )
-        
-        # 8. 맵 상태 반환
-        game_map_state = GameMapState(
-            tiles=tiles,
-            civs=civilizations,
-            turn=0,
-            game_id=game_id
-        )
-        
-        # 9. DB 저장 (실제 구현 시)
-        # await save_map_to_db(game_id, game_map_state)
-        
-        return game_map_state
+                
+                if dist_to_city <= 2 and dist_to_city > 0 and not is_sea and not is_edge:
+                    # 랜덤하게 좋은 지형 선택 (평원/초원/숲 등)
+                    good_terrains = [
+                        TerrainType.PLAINS, TerrainType.GRASSLAND, 
+                        TerrainType.FOREST, TerrainType.HILLS
+                    ]
+                    hexagon.terrain = random.choice(good_terrains)
+                    
+                    # 좋은 자원도 배치 (20% 확률)
+                    if random.random() < 0.2:
+                        good_resources = [
+                            ResourceType.WHEAT, ResourceType.HORSES, 
+                            ResourceType.CATTLE, ResourceType.IRON
+                        ]
+                        hexagon.resource = random.choice(good_resources)
+            
+            # 플레이어 위치는 시야 범위가 넓게 탐험됨
+            dist_to_player = max(
+                abs(q - civ_positions["Korea"]["q"]), 
+                abs(r - civ_positions["Korea"]["r"]), 
+                abs(s - (-civ_positions["Korea"]["q"] - civ_positions["Korea"]["r"]))
+            )
+            
+            if dist_to_player <= 3:  # 3칸 이내는 완전히 보임
+                hexagon.visible = True
+                hexagon.explored = True
+            elif dist_to_player <= 5:  # 5칸 이내는 탐험됨
+                hexagon.explored = True
+                hexagon.visible = random.random() < 0.3  # 30% 확률로 보임
+            
+            hexagons.append(hexagon)
     
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"맵 생성 중 오류 발생: {str(e)}"
-        )
+    return hexagons
 
-@router.get("{game_id}", response_model=GameMapState)
-async def get_game_map(game_id: str):
-    """게임 맵 정보 조회 API"""
-    try:
-        # DB에서 게임 맵 정보 조회 (실제 구현 시)
-        # game_map = await load_map_from_db(game_id)
-        
-        # 임시 응답
-        return {
-            "tiles": [],
-            "civs": [],
-            "turn": 0,
-            "game_id": game_id
-        }
+@router.get("/adjacent")
+async def get_adjacent_tiles(q: int, r: int):
+    """지정된 타일 주변의 인접 타일 정보 반환"""
+    # 인접 방향 (육각형 그리드)
+    directions = [
+        (1, 0, -1),  # 동쪽
+        (1, -1, 0),  # 북동쪽
+        (0, -1, 1),  # 북서쪽
+        (-1, 0, 1),  # 서쪽
+        (-1, 1, 0),  # 남서쪽
+        (0, 1, -1)   # 남동쪽
+    ]
     
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"맵 정보 조회 중 오류 발생: {str(e)}"
+    hexagons = []
+    
+    for dir_q, dir_r, dir_s in directions:
+        adj_q = q + dir_q
+        adj_r = r + dir_r
+        adj_s = -adj_q - adj_r
+        
+        # 랜덤한 지형 생성 (실제로는 데이터베이스에서 조회)
+        terrain = random.choice([t for t in TerrainType])
+        
+        # 바다/산은 제외 (이동 가능한 타일만)
+        while terrain in [TerrainType.OCEAN, TerrainType.MOUNTAIN]:
+            terrain = random.choice([t for t in TerrainType])
+        
+        hexagon = HexTile(
+            q=adj_q,
+            r=adj_r,
+            s=adj_s,
+            terrain=terrain,
+            resource=random.choice([r for r in ResourceType]) if random.random() < 0.2 else None,
+            visible=True,
+            explored=True
         )
-
-# 도우미 함수들 (실제 DB 연동 시 구현)
-async def save_map_to_db(game_id: str, map_state: GameMapState):
-    """맵 상태를 DB에 저장"""
-    # Prisma 또는 다른 ORM을 사용한 DB 저장 구현
-    pass
-
-async def load_map_from_db(game_id: str) -> GameMapState:
-    """DB에서 맵 상태 로드"""
-    # Prisma 또는 다른 ORM을 사용한 DB 조회 구현
-    pass
+        
+        hexagons.append(hexagon)
+    
+    return {"hexagons": hexagons}
