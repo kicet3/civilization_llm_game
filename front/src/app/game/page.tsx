@@ -91,41 +91,51 @@ export default function GamePage() {
   }>({ message: '', show: false });
   
   // 게임 초기화
-  useEffect(() => {
-    const initGame = async () => {
-      try {
-        setIsLoading(true);
-        // 게임 시작 API 호출
-        const initialState = await gameService.startGame({
-          mapType,
-          playerName: '플레이어',
-          playerCiv,
-          difficulty,
-          civCount
-        });
-        
-        setGameState(initialState);
-        setTurn(initialState.turn);
-        setYear(initialState.year);
-        
-        // 맵 데이터 가져오기
-        const { hexagons } = await gameService.getMap();
-        setMapData(hexagons);
-        
-        // 초기 로그 메시지
-        addLog('system', '게임이 시작되었습니다.', initialState.turn);
-        addLog('advisor', `새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.`, initialState.turn);
-        
-        setIsLoading(false);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '게임 초기화 실패');
-        setIsLoading(false);
-        showToast('게임 초기화 실패', 'error');
-      }
-    };
-    
-    initGame();
-  }, [mapType, difficulty, playerCiv, civCount, gameMode]);
+  
+useEffect(() => {
+  const loadGameData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // 초기 게임 상태 설정 (로컬에서 처리)
+      const initialState = {
+        turn: 1,
+        year: -4000,
+        resources: {
+          food: 10,
+          production: 5,
+          gold: 20,
+          science: 3,
+          culture: 2,
+          faith: 1,
+          happiness: 10
+        },
+        cities: [],
+        units: []
+      };
+      
+      setGameState(initialState);
+      setTurn(initialState.turn);
+      setYear(initialState.year);
+      
+      // 맵 데이터만 가져오기
+      const { hexagons } = await gameService.getMap();
+      setMapData(hexagons);
+      
+      // 초기 로그 메시지
+      addLog('system', '게임이 시작되었습니다.', initialState.turn);
+      addLog('advisor', `새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.`, initialState.turn);
+      
+      setIsLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '게임 데이터 로드 실패');
+      setIsLoading(false);
+      showToast('게임 데이터 로드 실패', 'error');
+    }
+  };
+
+  loadGameData();
+}, [mapType, difficulty, playerCiv, civCount, gameMode]);
   
   // 토스트 메시지 표시
   const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -417,7 +427,7 @@ export default function GamePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col">
+    <div className="h-[100vh] min-h-screen bg-slate-900 text-white flex flex-col">
       {/* 토스트 메시지 */}
       <Toast 
         message={toast.message} 
@@ -426,7 +436,7 @@ export default function GamePage() {
       />
       
       {/* 상단 네비게이션 */}
-      <nav className="bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
+      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
         <div className="flex items-center">
           <Menu className="mr-2" size={24} />
           <span className="font-bold text-lg">문명</span>
@@ -556,13 +566,13 @@ export default function GamePage() {
         </div>
         
         {/* 메인 콘텐츠 영역 */}
-        <div className="h-full flex-1 flex flex-col overflow-hidden">
-          <div className="h-full flex-1 overflow-hidden">
+        <div className="h-[93vh] flex-1 flex flex-col overflow-hidden">
+          <div className="h-[100%] flex-1 overflow-hidden">
             {renderTabContent()}
           </div>
           
           {/* 하단 로그 및 명령 영역 */}
-          <div className="h-64 bg-slate-800 border-t border-slate-700 flex">
+          <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
             {/* 로그 영역 */}
             <div className="flex-1 p-3 overflow-auto flex flex-col-reverse">
               <div className="space-y-3">

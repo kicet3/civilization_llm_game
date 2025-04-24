@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import gameService, { HexTile, Unit } from "@/services/gameService";
+import gameService from "@/services/gameService";
+import { HexTile, Unit } from "@/types/game";
 import { cn } from "@/lib/utils";
 import { 
   ZoomIn, ZoomOut, Compass, Home, RotateCcw,
@@ -106,6 +107,7 @@ export default function ImprovedMapPanel({
     const loadMapData = async () => {
       try {
         setIsLoading(true);
+        // 맵 데이터만 가져오기
         const { hexagons } = await gameService.getMap();
         setMapData(hexagons);
         
@@ -114,9 +116,11 @@ export default function ImprovedMapPanel({
         setNaturalWonders(wonders);
         
         setIsLoading(false);
+        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
       } catch (err) {
         setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
         setIsLoading(false);
+        showToast("맵 데이터 로드에 실패했습니다.", "error");
       }
     };
 
@@ -806,6 +810,20 @@ export default function ImprovedMapPanel({
         >
           <ZoomOut size={20} />
         </button>
+        <button 
+          onClick={handleCenterMap}
+          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
+          title="중앙으로"
+        >
+          <Home size={20} />
+        </button>
+        <button 
+          onClick={handleRefreshMap}
+          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
+          title="맵 새로고침"
+        >
+          <RefreshCw size={20} />
+        </button>
       </div>
       
       {/* 자연경관 표시기 */}
@@ -867,12 +885,12 @@ export default function ImprovedMapPanel({
               )}
               <div className="text-xs mb-1">이동 비용: {hoveredTile.movementCost}</div>
               <div className="text-xs flex flex-wrap gap-1">
-                {hoveredTile.yields.food > 0 && <span className="text-green-300">식량: {hoveredTile.yields.food}</span>}
-                {hoveredTile.yields.production > 0 && <span className="text-red-300">생산: {hoveredTile.yields.production}</span>}
-                {hoveredTile.yields.gold > 0 && <span className="text-yellow-300">골드: {hoveredTile.yields.gold}</span>}
-                {hoveredTile.yields.science > 0 && <span className="text-blue-300">과학: {hoveredTile.yields.science}</span>}
-                {hoveredTile.yields.culture > 0 && <span className="text-purple-300">문화: {hoveredTile.yields.culture}</span>}
-                {hoveredTile.yields.faith > 0 && <span className="text-white">신앙: {hoveredTile.yields.faith}</span>}
+                {hoveredTile.yields?.food > 0 && <span className="text-green-300">식량: {hoveredTile.yields.food}</span>}
+                {hoveredTile.yields?.production > 0 && <span className="text-red-300">생산: {hoveredTile.yields.production}</span>}
+                {hoveredTile.yields?.gold > 0 && <span className="text-yellow-300">골드: {hoveredTile.yields.gold}</span>}
+                {hoveredTile.yields?.science > 0 && <span className="text-blue-300">과학: {hoveredTile.yields.science}</span>}
+                {hoveredTile.yields?.culture > 0 && <span className="text-purple-300">문화: {hoveredTile.yields.culture}</span>}
+                {hoveredTile.yields?.faith > 0 && <span className="text-white">신앙: {hoveredTile.yields.faith}</span>}
               </div>
             </>
           )}

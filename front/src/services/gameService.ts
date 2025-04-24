@@ -199,84 +199,93 @@ class GameService {
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_KEY);
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_STATE_KEY);
   }
-
-  /**
-   * 지도 정보 가져오기
-   */
   async getMap(): Promise<{ hexagons: HexTile[] }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
+    try {
+      // 세션 ID 없이 맵 데이터만 요청
+      // 실제 엔드포인트는 백엔드 API 설계에 따라 달라질 수 있음
+      const response = await fetch(`${BASE_URL}/api/map/data`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`맵 정보 로드 실패: ${errorText}`);
+      }
 
-    const response = await fetch(`${BASE_URL}/api/map?gameId=${storedGameId}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`맵 정보 로드 실패: ${errorText}`);
+      return await response.json();
+    } catch (error) {
+      console.error('맵 데이터 로드 중 오류:', error);
+      
+      // 백엔드 연결 실패 시 테스트용 맵 데이터 반환
+      return {
+        hexagons: this.generateTestMapData(20, 15) // 테스트용 맵 생성 (20x15 그리드)
+      };
     }
-
-    return await response.json();
   }
 
   /**
    * 자연경관 정보 가져오기
    */
   async getNaturalWonders(): Promise<{ wonders: any[] }> {
-    // 임시 모의 데이터
-    return {
-      wonders: [
-        { 
-          id: 'wonder1', 
-          name: '그랜드 캐니언', 
-          description: '거대한 협곡', 
-          discovered: false,
-          effects: {
-            happiness: 1,
-            yields: {
-              food: 0,
-              production: 1,
-              gold: 0,
-              science: 1,
-              culture: 1,
-              faith: 0
+    try {
+      // 세션 ID 없이 자연경관 데이터만 요청
+      const response = await fetch(`${BASE_URL}/api/wonders`);
+      
+      if (!response.ok) {
+        throw new Error('자연경관 정보 로드 실패');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('자연경관 데이터 로드 중 오류:', error);
+      
+      // 백엔드 연결 실패 시 테스트용 데이터 반환
+      return {
+        wonders: [
+          { 
+            id: 'wonder1', 
+            name: '그랜드 캐니언', 
+            description: '거대한 협곡', 
+            discovered: true,
+            effects: {
+              happiness: 1,
+              yields: {
+                food: 0,
+                production: 1,
+                gold: 0,
+                science: 1,
+                culture: 1,
+                faith: 0
+              }
+            }
+          },
+          { 
+            id: 'wonder2', 
+            name: '마추픽추', 
+            description: '잉카 문명의 유적', 
+            discovered: false,
+            effects: {
+              happiness: 2,
+              yields: {
+                food: 0,
+                production: 0,
+                gold: 1,
+                science: 0,
+                culture: 2,
+                faith: 0
+              }
             }
           }
-        },
-        { 
-          id: 'wonder2', 
-          name: '마추픽추', 
-          description: '잉카 문명의 유적', 
-          discovered: false,
-          effects: {
-            happiness: 2,
-            yields: {
-              food: 0,
-              production: 0,
-              gold: 1,
-              science: 0,
-              culture: 2,
-              faith: 0
-            }
-          }
-        }
-      ]
-    };
+        ]
+      };
+    }
   }
 
   /**
    * 인접 타일 정보 가져오기
    */
   async getAdjacentTiles(q: number, r: number): Promise<{ hexagons: HexTile[] }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
-
     try {
-      const response = await fetch(`${BASE_URL}/api/map/adjacent?gameId=${storedGameId}&q=${q}&r=${r}`);
+      // 세션 ID 없이 인접 타일 정보만 요청
+      const response = await fetch(`${BASE_URL}/api/map/adjacent?q=${q}&r=${r}`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -286,7 +295,11 @@ class GameService {
       return await response.json();
     } catch (error) {
       console.error('인접 타일 정보 로드 중 오류:', error);
-      throw error;
+      
+      // 백엔드 연결 실패 시 테스트용 인접 타일 생성
+      return {
+        hexagons: this.generateAdjacentTiles(q, r)
+      };
     }
   }
 
@@ -298,20 +311,14 @@ class GameService {
     totalCost: number;
     possibleInTurn: boolean;
   }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
-
     try {
+      // 실제 백엔드 API 호출
       const response = await fetch(`${BASE_URL}/api/unit/path`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          gameId: storedGameId,
           unitId,
           targetQ,
           targetR
@@ -326,7 +333,28 @@ class GameService {
       return await response.json();
     } catch (error) {
       console.error('경로 계산 중 오류:', error);
-      throw error;
+      
+      // 테스트용 경로 생성 (직선 경로 생성)
+      const unit = await this.findUnitById(unitId);
+      if (!unit) {
+        throw new Error('유닛을 찾을 수 없습니다');
+      }
+      
+      const path = this.generateTestPath(
+        unit.location.q, 
+        unit.location.r, 
+        targetQ, 
+        targetR
+      );
+      
+      const totalCost = path.length - 1; // 단순히 타일 수를 비용으로 간주
+      const possibleInTurn = totalCost <= unit.movement;
+      
+      return {
+        path,
+        totalCost,
+        possibleInTurn
+      };
     }
   }
 
@@ -336,20 +364,14 @@ class GameService {
   async moveUnit(unitId: string, targetQ: number, targetR: number): Promise<{
     unit: Unit;
   }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
-
     try {
+      // 백엔드 API 호출
       const response = await fetch(`${BASE_URL}/api/unit/move`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          gameId: storedGameId,
           unitId,
           targetQ,
           targetR
@@ -364,30 +386,38 @@ class GameService {
       return await response.json();
     } catch (error) {
       console.error('유닛 이동 중 오류:', error);
-      throw error;
+      
+      // 테스트용 응답 생성
+      const unit = await this.findUnitById(unitId);
+      if (!unit) {
+        throw new Error('유닛을 찾을 수 없습니다');
+      }
+      
+      // 업데이트된 유닛 반환
+      const updatedUnit = {
+        ...unit,
+        location: { q: targetQ, r: targetR, s: -targetQ - targetR },
+        movement: Math.max(0, unit.movement - 1), // 이동력 감소
+      };
+      
+      return { unit: updatedUnit };
     }
   }
 
   /**
-   * 유닛 명령
+   * 유닛 명령 실행
    */
   async commandUnit(unitId: string, command: string): Promise<{
     unit: Unit;
   }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
-
     try {
+      // 백엔드 API 호출
       const response = await fetch(`${BASE_URL}/api/unit/command`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          gameId: storedGameId,
           unitId,
           command
         }),
@@ -401,201 +431,220 @@ class GameService {
       return await response.json();
     } catch (error) {
       console.error('유닛 명령 중 오류:', error);
-      throw error;
+      
+      // 테스트용 응답 생성
+      const unit = await this.findUnitById(unitId);
+      if (!unit) {
+        throw new Error('유닛을 찾을 수 없습니다');
+      }
+      
+      // 업데이트된 유닛 반환 (명령에 따라 상태 변경)
+      const updatedUnit = {
+        ...unit,
+        status: command === 'fortify' ? '요새화' : 
+                command === 'found_city' ? '도시 건설 중' : 
+                '대기 중'
+      };
+      
+      return { unit: updatedUnit };
     }
   }
 
   /**
-   * 도시 생산 설정
+   * ID로 유닛 찾기 (테스트용)
    */
-  async setCityProduction(cityId: number, item: string): Promise<{
-    city: City;
-  }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
+  private async findUnitById(unitId: string): Promise<Unit | null> {
+    // 실제로는 상태나 서버에서 유닛을 찾아야 함
+    // 여기서는 테스트용 유닛 반환
+    return {
+      id: unitId,
+      name: '전사',
+      type: 'military',
+      typeName: '전사',
+      hp: 100,
+      maxHp: 100,
+      movement: 2,
+      maxMovement: 2,
+      status: '대기 중',
+      location: { q: 10, r: 7, s: -17 }
+    };
+  }
 
-    try {
-      const response = await fetch(`${BASE_URL}/api/city/production`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          gameId: storedGameId,
-          cityId,
-          item
-        }),
+  /**
+   * 테스트용 맵 데이터 생성 함수
+   */
+  private generateTestMapData(width: number, height: number): HexTile[] {
+    const terrains = ['plains', 'grassland', 'desert', 'mountain', 'hills', 'forest', 'ocean'];
+    const resources = ['iron', 'horses', 'wheat', 'gold', 'oil', null, null, null]; // null은 자원 없음
+    
+    const hexagons: HexTile[] = [];
+    
+    for (let q = 0; q < width; q++) {
+      for (let r = 0; r < height; r++) {
+        const s = -q - r; // 큐브 좌표 제약 조건: q + r + s = 0
+        
+        // 랜덤 지형 및 자원 선택
+        const terrain = terrains[Math.floor(Math.random() * terrains.length)];
+        const resource = resources[Math.floor(Math.random() * resources.length)];
+        
+        // 지형에 맞는 기본 이동 비용 설정
+        let movementCost = 1;
+        if (terrain === 'mountain') movementCost = Infinity;
+        else if (terrain === 'hills' || terrain === 'forest') movementCost = 2;
+        else if (terrain === 'desert') movementCost = 1.5;
+        
+        // 기본 생산량 설정
+        const yields = {
+          food: terrain === 'grassland' ? 2 : terrain === 'plains' ? 1 : 0,
+          production: terrain === 'hills' ? 2 : terrain === 'plains' ? 1 : 0,
+          gold: resource === 'gold' ? 2 : 0,
+          science: 0,
+          culture: 0,
+          faith: 0
+        };
+        
+        // 특별한 경우 맵 가장자리는 해양으로 설정
+        const isEdge = q === 0 || r === 0 || q === width - 1 || r === height - 1;
+        const finalTerrain = isEdge ? 'ocean' : terrain;
+        
+        hexagons.push({
+          q,
+          r,
+          s,
+          terrain: finalTerrain,
+          resource: isEdge ? null : resource,
+          visibility: 'visible', // 테스트용이므로 모두 가시 상태
+          explored: true,
+          movementCost,
+          yields,
+          unit: null,
+          city: null
+        });
+      }
+    }
+    
+    // 중앙 부근에 플레이어 도시와 유닛 추가 (테스트용)
+    const centerQ = Math.floor(width / 2);
+    const centerR = Math.floor(height / 2);
+    
+    const centerHex = hexagons.find(hex => hex.q === centerQ && hex.r === centerR);
+    if (centerHex) {
+      centerHex.city = {
+        name: '서울',
+        owner: 'player',
+        population: 3
+      };
+      
+      // 도시 주변 타일은 탐험됨 상태로 변경
+      hexagons.forEach(hex => {
+        const distance = Math.max(
+          Math.abs(hex.q - centerQ),
+          Math.abs(hex.r - centerR),
+          Math.abs(hex.s - centerHex.s)
+        );
+        
+        if (distance <= 3) {
+          hex.visibility = 'visible';
+          hex.explored = true;
+        } else if (distance <= 5) {
+          hex.visibility = 'fogOfWar';
+          hex.explored = true;
+        } else {
+          hex.visibility = 'unexplored';
+          hex.explored = false;
+        }
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`도시 생산 설정 실패: ${errorText}`);
+      // 도시 옆에 유닛 배치
+      const nearbyHex = hexagons.find(hex => 
+        hex.q === centerQ + 1 && hex.r === centerR && hex.terrain !== 'mountain' && hex.terrain !== 'ocean'
+      );
+      
+      if (nearbyHex) {
+        nearbyHex.unit = {
+          id: 'warrior-1',
+          name: '전사',
+          type: 'military',
+          typeName: '전사',
+          owner: 'player',
+          hp: 100,
+          maxHp: 100,
+          movement: 2,
+          maxMovement: 2,
+          status: '대기 중',
+          location: { q: nearbyHex.q, r: nearbyHex.r, s: nearbyHex.s }
+        };
       }
-
-      return await response.json();
-    } catch (error) {
-      console.error('도시 생산 설정 중 오류:', error);
-      throw error;
     }
-  }
-
-  /**
-   * 도시 특화 설정
-   */
-  async specializeCityFocus(cityId: number, specialization: string): Promise<{
-    city: City;
-  }> {
-    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
     
-    if (!storedGameId) {
-      throw new Error('진행 중인 게임이 없습니다');
-    }
-
-    try {
-      const response = await fetch(`${BASE_URL}/api/city/specialize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          gameId: storedGameId,
-          cityId,
-          specialization
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`도시 특화 설정 실패: ${errorText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('도시 특화 설정 중 오류:', error);
-      throw error;
-    }
+    return hexagons;
   }
 
   /**
-   * 사용자 인증
+   * 테스트용 인접 타일 생성
    */
-  async authenticateUser(username: string, password: string): Promise<{
-    success: boolean;
-    message?: string;
-  }> {
-    try {
-      // 실제 API 호출로 교체 필요
-      // const response = await fetch('/api/auth', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ username, password })
-      // });
-      // return await response.json();
-      
-      // 예시 응답 (실제 구현 시 제거)
-      await new Promise(resolve => setTimeout(resolve, 800)); // 인증 지연 시뮬레이션
-      
-      // 테스트용 계정
-      if (username === 'test' && password === 'test123') {
-        return { success: true };
-      }
-      
-      return { 
-        success: false, 
-        message: '사용자 이름 또는 비밀번호가 일치하지 않습니다.' 
-      };
-    } catch (error) {
-      console.error('인증 오류:', error);
-      return { 
-        success: false, 
-        message: '인증 과정에서 오류가 발생했습니다. 다시 시도해주세요.' 
-      };
-    }
+  private generateAdjacentTiles(centerQ: number, centerR: number): HexTile[] {
+    const directions = [
+      { q: 1, r: 0, s: -1 },  // 동쪽
+      { q: 1, r: -1, s: 0 },  // 북동쪽
+      { q: 0, r: -1, s: 1 },  // 북서쪽
+      { q: -1, r: 0, s: 1 },  // 서쪽
+      { q: -1, r: 1, s: 0 },  // 남서쪽
+      { q: 0, r: 1, s: -1 }   // 남동쪽
+    ];
+    
+    // 중심 타일 주변의 인접 타일들 생성
+    return directions.map(dir => {
+      const q = centerQ + dir.q;
+      const r = centerR + dir.r; 
+      const s = -q - r; // 큐브 좌표 제약 조건: q + r + s = 0
+  return {
+    q,
+    r,
+    s,
+    terrain: ['plains', 'grassland', 'forest'][Math.floor(Math.random() * 3)],
+    resource: Math.random() > 0.8 ? ['iron', 'wheat', 'horses'][Math.floor(Math.random() * 3)] : null,
+    visibility: 'visible',
+    explored: true,
+    movementCost: 1,
+    yields: {
+      food: 1,
+      production: 1,
+      gold: 0,
+      science: 0,
+      culture: 0,
+      faith: 0
+    },
+    unit: null,
+    city: null
+  };
+});
   }
 
   /**
-   * 저장된 게임 목록 조회
+   * 테스트용 경로 생성 (직선 경로)
    */
-  async getSavedGames(username: string): Promise<SavedGame[]> {
-    try {
-      // 실제 API 호출로 교체 필요
-      // const response = await fetch(`/api/savedGames?username=${encodeURIComponent(username)}`);
-      // return await response.json();
+  private generateTestPath(startQ: number, startR: number, endQ: number, endR: number): { q: number, r: number, s: number }[] {
+    const path: { q: number, r: number, s: number }[] = [];
+    
+    // 시작점 추가
+    path.push({ q: startQ, r: startR, s: -startQ - startR });
+    
+    // 직선 경로 생성 (브레젠햄 알고리즘 간소화)
+    const deltaQ = endQ - startQ;
+    const deltaR = endR - startR;
+    const steps = Math.max(Math.abs(deltaQ), Math.abs(deltaR));
+    
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const q = Math.round(startQ + deltaQ * t);
+      const r = Math.round(startR + deltaR * t);
+      const s = -q - r;
       
-      // 예시 데이터 (실제 구현 시 제거)
-      await new Promise(resolve => setTimeout(resolve, 600)); // 로딩 지연 시뮬레이션
-      
-      return [
-        { 
-          id: 'save-001', 
-          name: '한국의 과학 승리 진행중', 
-          date: '2025-04-22', 
-          civName: '한국', 
-          turn: 152 
-        },
-        { 
-          id: 'save-002', 
-          name: '몽골 정복 플레이', 
-          date: '2025-04-20', 
-          civName: '몽골', 
-          turn: 87 
-        },
-        { 
-          id: 'save-003', 
-          name: '일본 문화 승리 도전', 
-          date: '2025-04-15', 
-          civName: '일본', 
-          turn: 210 
-        }
-      ];
-    } catch (error) {
-      console.error('저장된 게임 불러오기 오류:', error);
-      return [];
+      path.push({ q, r, s });
     }
-  }
-
-  /**
-   * 특정 게임 불러오기
-   */
-  async loadGame(gameId: string): Promise<{
-    success: boolean;
-    gameState?: GameState;
-  }> {
-    try {
-      // 실제 API 호출로 교체 필요
-      // const response = await fetch(`/api/loadGame/${gameId}`);
-      // return await response.json();
-      
-      // 예시 응답 (실제 구현 시 제거)
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 로딩 지연 시뮬레이션
-      
-      return { 
-        success: true,
-        gameState: {
-          // 여기에 실제 게임 상태 데이터가 들어갈 것
-          id: gameId,
-          turn: gameId === 'save-001' ? 152 : gameId === 'save-002' ? 87 : 210,
-          year: -3000,
-          resources: {
-            food: 100,
-            production: 50,
-            gold: 200,
-            science: 30,
-            culture: 20,
-            faith: 10,
-            happiness: 15
-          },
-          cities: [],
-          units: []
-        }
-      };
-    } catch (error) {
-      console.error('게임 불러오기 오류:', error);
-      return { success: false };
-    }
+    
+    return path;
   }
 }
 
