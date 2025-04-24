@@ -436,9 +436,8 @@ useEffect(() => {
       />
       
       {/* 상단 네비게이션 */}
-      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
-        <div className="flex items-center">
-          <Menu className="mr-2" size={24} />
+      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-center border-b border-slate-700">
+        <div className="fixed left-5 flex items-center">
           <span className="font-bold text-lg">문명</span>
         </div>
         <div className="flex space-x-6">
@@ -449,7 +448,7 @@ useEffect(() => {
             <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
           </div>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="fixed flex items-center space-x-4 right-4">
           {/* 자원 표시 */}
           <div className="flex items-center space-x-4 text-base">
             <div className="flex items-center">

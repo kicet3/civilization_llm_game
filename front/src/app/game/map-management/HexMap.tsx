@@ -1,36 +1,34 @@
-"use client";
-
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { HexTile, GameMapState } from "@/types/game";
 import { 
   ZoomIn, ZoomOut, RefreshCw, Home, Eye, Mountain, 
   Waves, Droplet, Wand, Wheat, Gem
 } from "lucide-react";
 import Toast from "../ui/Toast";
+import gameService from "@/services/gameService";
 
 interface HexMapProps {
   gameId: string;
-  onTileClick?: (tile: HexTile) => void;
-  selectedTile?: HexTile | null;
+  onTileClick?: (tile: any) => void;
+  selectedTile?: any | null;
   onUnitMove?: (unitId: string, to: { q: number, r: number, s: number }) => void;
 }
 
-const HexMap: React.FC<HexMapProps> = ({ 
+export default function HexMap({ 
   gameId, 
   onTileClick, 
   selectedTile,
   onUnitMove
-}) => {
+}: HexMapProps) {
   // 상태 관리
-  const [mapState, setMapState] = useState<GameMapState | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [mapData, setMapData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [scale, setScale] = useState(1);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [hoveredTile, setHoveredTile] = useState<HexTile | null>(null);
+  const [hoveredTile, setHoveredTile] = useState<any | null>(null);
   
   // 토스트 메시지
   const [toast, setToast] = useState<{
@@ -49,139 +47,149 @@ const HexMap: React.FC<HexMapProps> = ({
   const HEX_WIDTH = Math.sqrt(3) / 2 * HEX_HEIGHT;
   const HEX_VERT = HEX_HEIGHT * 0.75;
 
-  // 맵 초기화 함수
-  const initializeMap = async () => {
-    try {
-      setIsLoading(true);
+  // 지형별 색상 함수
+  const getTerrainColor = (terrain: string): string => {
+    switch (terrain) {
+      case 'plains': return '#dda15e';     // 평원
+      case 'grassland': return '#606c38';  // 초원
+      case 'desert': return '#e9c46a';     // 사막
+      case 'mountain': return '#6c757d';   // 산
+      case 'hills': return '#bc6c25';      // 언덕
+      case 'forest': return '#283618';     // 숲
+      case 'ocean': return '#219ebc';      // 대양
+      case 'coast': return '#8ecae6';      // 해안
+      case 'tundra': return '#e5e5e5';     // 툰드라
+      default: return '#34495e';           // 기본
+    }
+  };
+
+  // 자원별 색상 함수
+  const getResourceColor = (resource: string): string => {
+    switch (resource) {
+      case 'iron': return '#7f8c8d';       // 철
+      case 'horses': return '#d35400';     // 말
+      case 'wheat': return '#f1c40f';      // 밀
+      case 'cattle': return '#e67e22';     // 소
+      case 'gold': return '#f39c12';       // 금
+      case 'gems': return '#9b59b6';       // 보석
+      default: return '#3498db';           // 기본
+    }
+  };
+
+  // 맵 데이터 로드
+  useEffect(() => {
+    const loadMapData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // gameService를 통해 맵 데이터 로드
+        const { hexagons } = await gameService.getMap();
+        setMapData(hexagons);
+        
+        setIsLoading(false);
+        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
+        setIsLoading(false);
+        showToast("맵 데이터 로드에 실패했습니다.", "error");
+      }
+    };
+  
+    loadMapData();
+  }, []);
+
+  // 캔버스 크기 설정
+  useEffect(() => {
+    if (!canvasRef.current || !containerRef.current) return;
+    
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
       
-      // /api/map/init/{game_id} 경로 직접 호출
-      const response = await fetch(`/api/map/init/${gameId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          width: 11,
-          height: 9,
-          ai_civs: ["Japan", "China", "Mongolia", "Russia", "Rome"],
-          player_civ: "Korea",
-          map_type: "continental"
-        }),
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      
+      // 맵 중앙 정렬
+      setOffset({
+        x: container.clientWidth / 2,
+        y: container.clientHeight / 2
       });
-      
-      if (!response.ok) {
-        throw new Error('맵 초기화 실패');
-      }
-      
-      const data = await response.json();
-      setMapState(data);
-      showToast('맵이 생성되었습니다', 'success');
-      setIsLoading(false);
-    } catch (error) {
-      console.error('맵 초기화 중 오류:', error);
-      setError(error instanceof Error ? error.message : '맵 초기화 중 오류 발생');
-      showToast('맵 생성 실패', 'error');
-      setIsLoading(false);
-    }
-  };
-
-  // 맵 로드 함수
-  const loadMap = async () => {
-    try {
-      setIsLoading(true);
-      
-      // 실제 API 호출
-      const response = await fetch(`/api/map/${gameId}`);
-      
-      if (!response.ok) {
-        throw new Error('맵 로드 실패');
-      }
-      
-      const data = await response.json();
-      setMapState(data);
-      setIsLoading(false);
-    } catch (error) {
-      console.error('맵 로드 중 오류:', error);
-      setError(error instanceof Error ? error.message : '맵 로드 중 오류 발생');
-      setIsLoading(false);
-    }
-  };
-
-  // 컴포넌트 마운트 시 맵 로드
-  useEffect(() => {
-    // 게임 ID가 새로 생성된 것이면 초기화, 아니면 로드
-    if (gameId.startsWith('new_')) {
-      initializeMap();
-    } else {
-      loadMap();
-    }
+    };
     
-    // 캔버스 크기 설정
-    if (containerRef.current && canvasRef.current) {
-      const resizeCanvas = () => {
-        if (!canvasRef.current || !containerRef.current) return;
-        
-        canvasRef.current.width = containerRef.current.clientWidth;
-        canvasRef.current.height = containerRef.current.clientHeight;
-        
-        // 맵 중앙 정렬
-        setOffset({
-          x: containerRef.current.clientWidth / 2,
-          y: containerRef.current.clientHeight / 2
-        });
-      };
-      
-      resizeCanvas();
-      window.addEventListener('resize', resizeCanvas);
-      
-      return () => {
-        window.removeEventListener('resize', resizeCanvas);
-      };
-    }
-  }, [gameId]);
-
-  // 맵 렌더링 함수
-  useEffect(() => {
-    if (!canvasRef.current || !mapState) return;
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
     
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, []);
+
+  // 맵 렌더링
+  useEffect(() => {
+    if (isLoading || !canvasRef.current || mapData.length === 0) return;
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     // 캔버스 초기화
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    renderMap(ctx);
+  }, [mapData, selectedTile, hoveredTile, offset, scale, isLoading]);
+
+  // 헥스 좌표를 픽셀 좌표로 변환
+  const hexToPixel = (q: number, r: number) => {
+    const x = q * HEX_WIDTH * scale + ((r % 2) * HEX_WIDTH * scale) / 2 + offset.x;
+    const y = r * HEX_VERT * scale + offset.y;
+    return { x, y };
+  };
+  
+  // 픽셀 좌표를 헥스 좌표로 변환
+  const pixelToHex = (x: number, y: number) => {
+    const adjustedX = (x - offset.x) / scale;
+    const adjustedY = (y - offset.y) / scale;
     
-    // 모든 타일 그리기
-    mapState.tiles.forEach(tile => {
-      // 좌표 변환
-      const { x, y } = hexToPixel(tile.q, tile.r);
+    const q = Math.round(adjustedX / HEX_WIDTH - (Math.round(adjustedY / HEX_VERT) % 2) / 2);
+    const r = Math.round(adjustedY / HEX_VERT);
+    const s = -q - r;
+    
+    return { q, r, s };
+  };
+
+  // 맵 렌더링 함수
+  const renderMap = (ctx: CanvasRenderingContext2D) => {
+    mapData.forEach(hex => {
+      const { x, y } = hexToPixel(hex.q, hex.r);
       
-      // 시야 범위 고려
-      if (!tile.explored) {
+      // 시야 상태에 따른 렌더링
+      if (!hex.explored) {
         // 미탐험 지역
         drawHexagon(ctx, x, y, '#222', 'rgba(0, 0, 0, 0.8)');
-      } else if (!tile.visible) {
+      } else if (!hex.visible) {
         // 탐험했지만 현재 시야 범위 밖
-        drawHexagon(ctx, x, y, getTerrainColor(tile.terrain), 'rgba(0, 0, 0, 0.5)');
+        drawHexagon(ctx, x, y, getTerrainColor(hex.terrain), 'rgba(0, 0, 0, 0.5)');
       } else {
         // 현재 시야 내
-        drawHexagon(ctx, x, y, getTerrainColor(tile.terrain));
+        // 지형 렌더링
+        drawHexagon(ctx, x, y, getTerrainColor(hex.terrain));
         
-        // 자원 그리기
-        if (tile.resource) {
-          drawResource(ctx, x, y, tile.resource);
+        // 자원 렌더링
+        if (hex.resource) {
+          drawResource(ctx, x, y, hex.resource);
         }
         
-        // 도시 그리기
-        if (tile.city_id) {
-          drawCity(ctx, x, y, tile.occupant || '');
+        // 도시 렌더링
+        if (hex.city_id || (hex.occupant && hex.occupant === 'Korea')) {
+          drawCity(ctx, x, y, hex.occupant || 'player');
         }
         
-        // 유닛 그리기
-        if (tile.unit_id) {
-          drawUnit(ctx, x, y, tile.occupant || '');
+        // 유닛 렌더링
+        if (hex.unit_id || (hex.occupant && hex.occupant !== 'Korea')) {
+          drawUnit(ctx, x, y, hex.occupant || 'ai');
         }
       }
       
@@ -201,48 +209,6 @@ const HexMap: React.FC<HexMapProps> = ({
     if (hoveredTile) {
       const { x, y } = hexToPixel(hoveredTile.q, hoveredTile.r);
       highlightTile(ctx, x, y, 'rgba(255, 255, 255, 0.5)', 2);
-    }
-  }, [mapState, selectedTile, hoveredTile, offset, scale]);
-
-  // 헥스 좌표를 픽셀 좌표로 변환
-  const hexToPixel = (q: number, r: number) => {
-    const x = q * HEX_WIDTH * scale + ((r % 2) * HEX_WIDTH * scale) / 2 + offset.x;
-    const y = r * HEX_VERT * scale + offset.y;
-    return { x, y };
-  };
-  
-  // 픽셀 좌표를 헥스 좌표로 변환
-  const pixelToHex = (x: number, y: number) => {
-    // 오프셋 및 스케일 적용하여 역변환
-    const adjustedX = (x - offset.x) / scale;
-    const adjustedY = (y - offset.y) / scale;
-    
-    // 열 (column) 계산
-    const q = Math.round(adjustedX / HEX_WIDTH - (Math.round(adjustedY / HEX_VERT) % 2) / 2);
-    
-    // 행 (row) 계산
-    const r = Math.round(adjustedY / HEX_VERT);
-    
-    // s 좌표 (q + r + s = 0)
-    const s = -q - r;
-    
-    return { q, r, s };
-  };
-  
-  // 지형별 색상
-  const getTerrainColor = (terrain: string): string => {
-    switch (terrain) {
-      case 'plains': return '#dda15e';
-      case 'grassland': return '#606c38';
-      case 'forest': return '#283618';
-      case 'hills': return '#bc6c25';
-      case 'mountain': return '#6c757d';
-      case 'desert': return '#e9c46a';
-      case 'tundra': return '#e5e5e5';
-      case 'snow': return '#ffffff';
-      case 'ocean': return '#219ebc';
-      case 'coast': return '#8ecae6';
-      default: return '#34495e';
     }
   };
   
@@ -309,19 +275,7 @@ const HexMap: React.FC<HexMapProps> = ({
   const drawResource = (ctx: CanvasRenderingContext2D, cx: number, cy: number, resource: string) => {
     const radius = HEX_WIDTH * scale / 6;
     
-    let color = '#fff';
-    switch (resource) {
-      case 'iron': color = '#7f8c8d'; break;
-      case 'horses': color = '#e67e22'; break;
-      case 'wheat': color = '#f1c40f'; break;
-      case 'gold': color = '#f39c12'; break;
-      case 'silver': color = '#bdc3c7'; break;
-      case 'gems': color = '#9b59b6'; break;
-      case 'marble': color = '#ecf0f1'; break;
-      case 'oil': color = '#2c3e50'; break;
-    }
-    
-    ctx.fillStyle = color;
+    ctx.fillStyle = getResourceColor(resource);
     ctx.beginPath();
     ctx.arc(cx, cy - radius, radius, 0, Math.PI * 2);
     ctx.fill();
@@ -408,10 +362,10 @@ const HexMap: React.FC<HexMapProps> = ({
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y
       });
-    } else if (mapState) {
+    } else if (mapData) {
       // 마우스 호버링시 타일 정보
       const { q, r, s } = pixelToHex(mouseX, mouseY);
-      const hoveredHex = mapState.tiles.find(tile => 
+      const hoveredHex = mapData.find(tile => 
         tile.q === q && tile.r === r && tile.s === s
       );
       
@@ -422,7 +376,7 @@ const HexMap: React.FC<HexMapProps> = ({
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
       setIsDragging(false);
-    } else if (mapState) {
+    } else if (mapData) {
       // 타일 선택
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -431,7 +385,7 @@ const HexMap: React.FC<HexMapProps> = ({
       const mouseY = e.clientY - rect.top;
       
       const { q, r, s } = pixelToHex(mouseX, mouseY);
-      const clickedTile = mapState.tiles.find(tile => 
+      const clickedTile = mapData.find(tile => 
         tile.q === q && tile.r === r && tile.s === s
       );
       
@@ -468,11 +422,25 @@ const HexMap: React.FC<HexMapProps> = ({
   
   // 맵 새로고침
   const handleRefreshMap = () => {
-    if (gameId.startsWith('new_')) {
-      initializeMap();
-    } else {
-      loadMap();
-    }
+    // 데이터 다시 로드
+    const loadMapData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // gameService를 통해 맵 데이터 로드
+        const { hexagons } = await gameService.getMap();
+        setMapData(hexagons);
+        
+        setIsLoading(false);
+        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
+        setIsLoading(false);
+        showToast("맵 데이터 로드에 실패했습니다.", "error");
+      }
+    };
+
+    loadMapData();
   };
   
   // 토스트 메시지 표시
@@ -482,8 +450,8 @@ const HexMap: React.FC<HexMapProps> = ({
       setToast({ message: '', show: false });
     }, 3000);
   };
-  
-  // 로딩 화면
+
+  // 로딩 중 화면
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full bg-slate-900">
@@ -516,46 +484,15 @@ const HexMap: React.FC<HexMapProps> = ({
         onClose={() => setToast({ ...toast, show: false })}
       />
       
-      {/* 맵 컨트롤 */}
-      <div className="absolute top-4 right-4 flex flex-col bg-slate-800 bg-opacity-80 rounded-lg p-2 z-10 space-y-2">
-        <button 
-          onClick={handleZoomIn}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="확대"
-        >
-          <ZoomIn size={20} />
-        </button>
-        <button 
-          onClick={handleZoomOut}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="축소"
-        >
-          <ZoomOut size={20} />
-        </button>
-        <button 
-          onClick={handleCenterMap}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="중앙으로"
-        >
-          <Home size={20} />
-        </button>
-        <button 
-          onClick={handleRefreshMap}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="맵 새로고침"
-        >
-          <Refresh size={20} />
-        </button>
-      </div>
       
       {/* 타일 정보 패널 */}
       {hoveredTile && hoveredTile.explored && (
         <div className="absolute bottom-4 left-4 bg-slate-800 bg-opacity-80 rounded-lg p-2 z-10 max-w-xs">
           <div className="flex items-center text-sm font-bold mb-1">
             {hoveredTile.terrain === 'mountain' && <Mountain size={16} className="mr-1" />}
-            {hoveredTile.terrain === 'forest' && <Forest size={16} className="mr-1" />}
+            {hoveredTile.terrain === 'forest' && <Mountain size={16} className="mr-1" />}
             {hoveredTile.terrain === 'ocean' && <Waves size={16} className="mr-1" />}
-            {hoveredTile.terrain === 'desert' && <Sand size={16} className="mr-1" />}
+            {hoveredTile.terrain === 'desert' && <Wand size={16} className="mr-1" />}
             <span className="capitalize">
               {hoveredTile.terrain} ({hoveredTile.q}, {hoveredTile.r})
             </span>
@@ -565,19 +502,19 @@ const HexMap: React.FC<HexMapProps> = ({
               {hoveredTile.resource && (
                 <div className="text-xs mb-1 flex items-center">
                   {hoveredTile.resource === 'wheat' && <Wheat size={12} className="mr-1" />}
-                  {hoveredTile.resource === 'horses' && <Horse size={12} className="mr-1" />}
+                  {hoveredTile.resource === 'horses' && <Mountain size={12} className="mr-1" />}
                   {hoveredTile.resource === 'gems' && <Gem size={12} className="mr-1" />}
                   자원: {hoveredTile.resource}
                 </div>
               )}
               {hoveredTile.city_id && (
                 <div className="text-xs mb-1">
-                  도시: {hoveredTile.city_id.split('_')[0]} 수도
+                  도시: {hoveredTile.city_id.split('_')[0]} 문명
                 </div>
               )}
               {hoveredTile.unit_id && (
                 <div className="text-xs mb-1">
-                  유닛: {hoveredTile.occupant} 유닛
+                  유닛: {hoveredTile.occupant} 문명
                 </div>
               )}
             </>
@@ -603,6 +540,4 @@ const HexMap: React.FC<HexMapProps> = ({
       />
     </div>
   );
-};
-
-export default HexMap;
+}
