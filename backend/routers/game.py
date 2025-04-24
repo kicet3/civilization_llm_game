@@ -764,15 +764,15 @@ async def get_game_options():
         ]
         
         game_modes_response = [
-            {
-                "id": mode.id,
+        {
+            "id": mode.id,
                 "name": mode.name,
-                "turns": mode.turns,
+                "turns": str(mode.turns),  # 정수를 문자열로 변환
                 "estimatedTime": mode.estimatedTime,
                 "description": mode.description
             } for mode in game_modes
         ]
-        
+        print(game_modes_response, difficulties_response, map_types_response, civilizations_response)
         return {
             "mapTypes": map_types_response,
             "difficulties": difficulties_response,

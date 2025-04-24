@@ -13,16 +13,12 @@ class GameSpeed(str, Enum):
     NORMAL = "보통"   # 250턴
     LONG = "장기"     # 500턴
 
+
 class Difficulty(str, Enum):
-    """난이도 enum"""
-    SETTLER = "정착자"
-    CHIEFTAIN = "족장"
-    WARLORD = "군주"
-    PRINCE = "왕자"
-    KING = "왕"
-    EMPEROR = "황제"
-    IMMORTAL = "불멸"
-    DEITY = "신"
+    EASY   = "easy"
+    NORMAL = "normal"
+    HARD   = "hard"
+
 
 
 class GameSessionResponse(BaseModel):
@@ -68,7 +64,7 @@ class GameSessionCreate(BaseModel):
     """게임 세션 생성을 위한 모델"""
     playerName: str
     mapType: MapType = MapType.CONTINENTS
-    difficulty: Difficulty = Difficulty.PRINCE
+    difficulty: Difficulty = Difficulty.NORMAL
     gameSpeed: str = "normal"  # 추후 enum으로 변경 가능
     playerCiv: str  # 선택한 문명 
     civCount: int = Field(default=8, ge=5, le=10)  # 문명 수 제한

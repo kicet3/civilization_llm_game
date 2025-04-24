@@ -5,30 +5,24 @@ from typing import Optional,Dict,Any
 from datetime import datetime
 from typing import List
 
+# models/map.py 파일
 class MapType(str, Enum):
     """맵 타입 enum"""
-    CONTINENTS = "대륙"      # Continents
-    PANGAEA = "판게아"        # Pangaea
-    ARCHIPELAGO = "섬"       # Archipelago
-    FRACTAL = "무작위"        # Fractal
-    SMALL_CONTINENTS = "작은대륙"  # Small Continents
-    TERRA = "테라"            # Terra
-    TILTED_AXIS = "기울어진축"   # Tilted Axis
-    INLAND_SEA = "내륙해"     # Inland Sea
-    SHUFFLE = "무작위"        # Shuffle
-    DONUT = "도넛"            # Donut
+    CONTINENTS = "continents"      
+    PANGAEA = "pangaea"        
+    ARCHIPELAGO = "archipelago"       
+    FRACTAL = "fractal"        
+    SMALL_CONTINENTS = "small_continents"  
+    TERRA = "terra"            
+    TILTED_AXIS = "tilted_axis"   
+    INLAND_SEA = "inland_sea"     
+    SHUFFLE = "shuffle"        
+    DONUT = "donut"
 
 class Difficulty(str, Enum):
-    """난이도 enum"""
-    SETTLER = "정착자"     # Settler
-    CHIEFTAIN = "족장"    # Chieftain
-    WARLORD = "군주"      # Warlord
-    PRINCE = "왕자"       # Prince
-    KING = "왕"          # King
-    EMPEROR = "황제"      # Emperor
-    IMMORTAL = "불멸"     # Immortal
-    DEITY = "신"         # Deity
-
+    EASY   = "easy"
+    NORMAL = "normal"
+    HARD   = "hard"
 
 class TerrainType(str, Enum):
     """지형 타입 enum"""
