@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 
 # 내부 모듈 임포트
-from routers import game
+from routers import game, map
 from core.config import setup_app
 
 # 환경 변수 로드
@@ -29,7 +29,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(game.router, prefix="/api/game", tags=["게임 세션"])
-# app.include_router(map.router, prefix="/api/map", tags=["맵/타일"])
+app.include_router(map.router, prefix="/api/map", tags=["맵/타일"])
 # app.include_router(city.router, prefix="/api/city", tags=["도시"])
 # app.include_router(unit.router, prefix="/api/unit", tags=["유닛"])
 # app.include_router(research.router, prefix="/api/research", tags=["연구/기술"])
