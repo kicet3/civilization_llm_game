@@ -164,7 +164,7 @@ export default function Home() {
 
       {/* 게임 모드 안내 영역 (select-mode 스타일 참고) */}
         <div className="absolute inset-0 bg-grid-pattern opacity-10 z-0 animate-pulse"></div>
-        <h1 className="text-6xl md:text-7xl font-extrabold mb-3 z-10 font-geist-mono tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-lg text-center">텍스트 문명</h1>
+        <h1 className="text-6xl md:text-7xl font-extrabold mb-3 z-10 font-geist-mono tracking-tight bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-lg text-center">문명</h1>
         <h2 className="text-2xl md:text-3xl text-gray-200 mb-6 z-10 font-semibold tracking-wide text-center">Text Civilization</h2>
         <p className="text-lg md:text-xl text-center max-w-2xl mx-auto mb-10 text-gray-300 z-10 font-medium">
           고대부터 미래까지, <span className="text-blue-300 font-bold">당신의 문명</span>을 이끌어<br className="hidden md:block" />승리를 향해 나아가세요.<br />육각형 타일 기반의 <span className="text-indigo-300 font-bold">턴제 전략 게임</span>으로 역사를 새롭게 써내려갑니다.
@@ -226,7 +226,7 @@ export default function Home() {
       <section className="py-16 px-4 bg-gradient-to-b from-slate-800 to-slate-900">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold mb-2 text-center">게임 특징</h2>
-          <p className="text-center text-gray-300 mb-12">텍스트 문명만의 특별한 경험</p>
+          <p className="text-center text-gray-300 mb-12">문명만의 특별한 경험</p>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 mb-16">
             {features.map((feature, i) => (
@@ -382,7 +382,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-4 text-center">게임 목표와 승리 방식</h2>
           <p className="text-center text-gray-300 mb-10">
-            <span className="text-blue-300 font-bold">텍스트 문명</span>에서는 다양한 승리 조건이 존재합니다.<br />
+            <span className="text-blue-300 font-bold">문명</span>에서는 다양한 승리 조건이 존재합니다.<br />
             <span className="text-indigo-200">게임 모드</span>와 <span className="text-indigo-200">난이도</span>에 따라 도전과 전략이 달라집니다.<br />
             원하는 목표를 정하고, 그에 맞는 전략을 세워보세요!
           </p>
@@ -432,7 +432,7 @@ export default function Home() {
 
       {/* 푸터 영역 */}
       <footer className="py-8 px-4 text-center text-gray-400">
-        <p>© 2025 텍스트 문명 (Text Civilization)</p>
+        <p>© 2025 문명 (Web Civilization)</p>
         <p className="mt-2 text-sm">육각형 타일 기반 웹 브라우저 턴제 전략 게임</p>
       </footer>
     </div>
