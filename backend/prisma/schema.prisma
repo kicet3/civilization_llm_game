@@ -147,6 +147,7 @@ model Hexagon {
 }
 
 // 5. 도시 상태 모델
+// 기존 City 모델에 위치 정보 필드 추가
 model City {
   id                     Int               @id @default(autoincrement())
   session_id             String            @db.Char(36)
@@ -156,6 +157,7 @@ model City {
   turns_left             Int?
   food                   Int?
   gold                   Int?
+  production             Int?              
   science                Int?
   culture                Int?
   faith                  Int?
@@ -167,6 +169,11 @@ model City {
   culture_to_next_border Int?
   specialization         String?           @db.VarChar(50)
   updated_at             DateTime          @updatedAt
+  
+  // 위치 정보 필드 추가
+  loc_q                  Int?              // 육각형 그리드의 q 좌표
+  loc_r                  Int?              // 육각형 그리드의 r 좌표
+  loc_s                  Int?              // 육각형 그리드의 s 좌표
   
   game_session           GameSession       @relation(fields: [session_id], references: [id])
   owner                  Player            @relation(fields: [owner_player_id], references: [id])

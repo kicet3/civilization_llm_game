@@ -64,7 +64,7 @@ class CityResponse(BaseModel):
     foodToNextPop: int
     cultureToNextBorder: int
     
-    # 도시 위치 좌표
+    # 도시 위치 좌표 (추가됨)
     location: Dict[str, int]
     
     # 건물 목록

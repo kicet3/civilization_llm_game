@@ -48,7 +48,13 @@ async def get_cities(gameId: str):
                 "turnsLeft": production_queue[0]["turnsLeft"] if production_queue else None,
                 "productionQueue": production_queue,
                 "foodToNextPop": city.food_to_next_pop or 10,
-                "cultureToNextBorder": city.culture_to_next_border or 10
+                "cultureToNextBorder": city.culture_to_next_border or 10,
+                # 도시 위치 정보 추가
+                "location": {
+                    "q": city.loc_q or 0,
+                    "r": city.loc_r or 0,
+                    "s": city.loc_s or 0
+                }
             })
         
         return {"cities": city_responses}
@@ -135,7 +141,13 @@ async def city_produce(request: CityProduceRequest):
                 "turnsLeft": production_queue[0]["turnsLeft"] if production_queue else None,
                 "productionQueue": production_queue,
                 "foodToNextPop": updated_city.food_to_next_pop or 10,
-                "cultureToNextBorder": updated_city.culture_to_next_border or 10
+                "cultureToNextBorder": updated_city.culture_to_next_border or 10,
+                # 도시 위치 정보 추가
+                "location": {
+                    "q": updated_city.loc_q or 0,
+                    "r": updated_city.loc_r or 0,
+                    "s": updated_city.loc_s or 0
+                }
             }
         }
     except HTTPException:
@@ -224,7 +236,13 @@ async def city_specialize(request: CitySpecializeRequest):
                 "productionQueue": production_queue,
                 "foodToNextPop": city_with_queue.food_to_next_pop or 10,
                 "cultureToNextBorder": city_with_queue.culture_to_next_border or 10,
-                "specialization": updated_city.specialization
+                "specialization": updated_city.specialization,
+                # 도시 위치 정보 추가
+                "location": {
+                    "q": city_with_queue.loc_q or 0,
+                    "r": city_with_queue.loc_r or 0,
+                    "s": city_with_queue.loc_s or 0
+                }
             }
         }
     except HTTPException:

@@ -35,6 +35,7 @@ class GameSessionResponse(BaseModel):
     gameSpeed: str
     createdAt: datetime
     updatedAt: datetime
+    initialState: Optional[Dict[str, Any]] = None  # 초기 게임 상태 추가
 
 class Event(BaseModel):
     """게임 이벤트 모델"""
