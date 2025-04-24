@@ -199,27 +199,114 @@ class GameService {
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_KEY);
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_STATE_KEY);
   }
-  async getMap(): Promise<{ hexagons: HexTile[] }> {
-    try {
-      // 세션 ID 없이 맵 데이터만 요청
-      // 실제 엔드포인트는 백엔드 API 설계에 따라 달라질 수 있음
-      const response = await fetch(`${BASE_URL}/api/map/data`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`맵 정보 로드 실패: ${errorText}`);
-      }
+  /**
+ * 맵 데이터 가져오기
+ */
+async getMap(): Promise<{ hexagons: HexTile[] }> {
+  try {
+    // 백엔드 API 호출 - 이제 내륙 바다 맵 데이터를 반환함
+    const response = await fetch(`${BASE_URL}/api/map/data`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`맵 정보 로드 실패: ${errorText}`);
+    }
 
-      return await response.json();
-    } catch (error) {
-      console.error('맵 데이터 로드 중 오류:', error);
+    return await response.json();
+  } catch (error) {
+    console.error('맵 데이터 로드 중 오류:', error);
+    
+    // 백엔드 연결 실패 시 간단한 테스트 맵 데이터 반환
+    // 원래는 generateTestMapData 함수를 호출했지만 이제는 더 간단한 에러 대응 맵을 반환
+    const fallbackMap = this.generateFallbackMap();
+    return { hexagons: fallbackMap };
+  }
+}
+
+/**
+ * 백엔드 연결 실패 시 사용할 간단한 폴백 맵 생성
+ */
+private generateFallbackMap(): HexTile[] {
+  // 6x6 크기의 매우 간단한 내륙 바다 스타일 맵 생성
+  const hexagons: HexTile[] = [];
+  const width = 6;
+  const height = 6;
+  
+  // 중심점
+  const centerQ = 2;
+  const centerR = 2;
+  
+  for (let q = 0; q < width; q++) {
+    for (let r = 0; r < height; r++) {
+      const s = -q - r;
       
-      // 백엔드 연결 실패 시 테스트용 맵 데이터 반환
-      return {
-        hexagons: this.generateTestMapData(20, 15) // 테스트용 맵 생성 (20x15 그리드)
-      };
+      // 중심에서의 거리
+      const distance = Math.max(
+        Math.abs(q - centerQ),
+        Math.abs(r - centerR),
+        Math.abs(s - (-centerQ - centerR))
+      );
+      
+      // 중앙에 바다, 바깥쪽에 육지
+      const isSea = distance < 2;
+      const terrain = isSea ? 'ocean' : ['plains', 'grassland', 'forest'][Math.floor(Math.random() * 3)];
+      
+      // 간단한 폴백 타일 생성
+      hexagons.push({
+        q,
+        r,
+        s,
+        terrain,
+        resource: Math.random() > 0.8 ? ['iron', 'wheat', 'horses'][Math.floor(Math.random() * 3)] : undefined,
+        visible: true,
+        explored: true,
+        movementCost: terrain === 'forest' ? 2 : 1,
+        unit: null,
+        city: null,
+        yields: {
+          food: terrain === 'grassland' ? 2 : terrain === 'plains' ? 1 : 0,
+          production: terrain === 'hills' ? 2 : terrain === 'forest' ? 1 : 0,
+          gold: 0,
+          science: 0,
+          culture: 0,
+          faith: 0
+        }
+      });
     }
   }
+  
+  // 플레이어 도시 추가
+  const playerHex = hexagons.find(hex => hex.q === 1 && hex.r === 3);
+  if (playerHex) {
+    playerHex.city = {
+      name: '서울',
+      owner: 'player',
+      population: 3
+    };
+    playerHex.terrain = 'plains';
+  }
+  
+  // 플레이어 유닛 추가
+  const unitHex = hexagons.find(hex => hex.q === 1 && hex.r === 4);
+  if (unitHex) {
+    unitHex.unit = {
+      id: 'warrior-1',
+      name: '전사',
+      type: 'military',
+      typeName: '전사',
+      owner: 'player',
+      hp: 100,
+      maxHp: 100,
+      movement: 2,
+      maxMovement: 2,
+      status: '대기 중',
+      location: { q: unitHex.q, r: unitHex.r, s: unitHex.s }
+    };
+    unitHex.terrain = 'plains';
+  }
+  
+  return hexagons;
+}
 
   /**
    * 자연경관 정보 가져오기
