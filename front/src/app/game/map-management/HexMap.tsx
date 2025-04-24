@@ -32,6 +32,7 @@ interface MiniMapProps {
   mapData: HexTile[];
   mapOffset: { x: number; y: number };
   mapScale: number;
+  onMiniMapClick: (q: number, r: number) => void; // 추가된 부분
 }
 
 const calculateMapBounds = (mapData: HexTile[]) => {
@@ -46,75 +47,6 @@ const calculateMapBounds = (mapData: HexTile[]) => {
   };
 };
 
-const MiniMap: React.FC<MiniMapProps> = ({ 
-  mapData, 
-  mapOffset, 
-  mapScale, 
-}) => {
-  
-  const miniMapRef = useRef<HTMLCanvasElement>(null);
-  const miniMapSize = 250; // 미니맵 크기
-  const miniMapScale = 0.1; // 미니맵 스케일
-
-  useEffect(() => {
-    
-    const canvas = miniMapRef.current;
-    if (!canvas || mapData.length === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // 캔버스 초기화
-    ctx.clearRect(0, 0, miniMapSize, miniMapSize);
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, miniMapSize, miniMapSize);
-
-    // 미니맵에 타일 그리기
-    mapData.forEach(hex => {
-      const x = hex.q * miniMapScale + miniMapSize / 2;
-      const y = hex.r * miniMapScale + miniMapSize / 2;
-
-      // 지형에 따른 색상
-      ctx.fillStyle = getTerrainColor(hex.terrain);
-      ctx.fillRect(x, y, 3, 3);
-    });
-
-    // 현재 보고 있는 영역 표시
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.strokeRect(
-      mapOffset.x * miniMapScale, 
-      mapOffset.y * miniMapScale, 
-      miniMapSize * mapScale, 
-      miniMapSize * mapScale
-    );
-  }, [mapData, mapOffset, mapScale]);
-
-  const handleMiniMapClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = miniMapRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // 클릭 좌표를 헥스 좌표로 변환
-    const q = Math.round((x - miniMapSize / 2) / miniMapScale);
-    const r = Math.round((y - miniMapSize / 2) / miniMapScale);
-
-    onMiniMapClick(q, r);
-  };
-
-  return (
-    <canvas
-      ref={miniMapRef}
-      width={miniMapSize}
-      height={miniMapSize}
-      onClick={handleMiniMapClick}
-      className="absolute bottom-4 right-4 bg-slate-800 bg-opacity-70 rounded-lg cursor-pointer"
-      style={{ zIndex: 10 }}
-    />
-  );
-};
 
 
 export default function HexMap({ 
@@ -128,7 +60,7 @@ export default function HexMap({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  
+  const [isMiniMapExpanded, setIsMiniMapExpanded] = useState(true);
   const [scale, setScale] = useState(0.2); // 기본값을 0.7로 조정
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -149,7 +81,83 @@ export default function HexMap({
   // 참조
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
+  const handleMiniMapClick = (q: number, r: number) => {
+    // 미니맵에서 클릭한 위치로 맵 중앙 이동 로직
+    const container = containerRef.current;
+    if (container) {
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      
+      setOffset({
+        x: centerX - (q * HEX_WIDTH * scale),
+        y: centerY - (r * HEX_VERT * scale)
+      });
+    }
+  };
+  const MiniMap: React.FC<MiniMapProps> = ({ 
+    mapData, 
+    mapOffset, 
+    mapScale, 
+    onMiniMapClick
+  }) => {
+    const miniMapRef = useRef<HTMLCanvasElement>(null);
+    const miniMapSize = 250; // 미니맵 크기
+    const miniMapScale = 0.1; // 미니맵 스케일
+  
+    useEffect(() => {
+      const canvas = miniMapRef.current;
+      if (!canvas || mapData.length === 0) return;
+  
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+  
+      // 캔버스 초기화
+      ctx.clearRect(0, 0, miniMapSize, miniMapSize);
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, miniMapSize, miniMapSize);
+  
+      // 미니맵에 타일 그리기
+      mapData.forEach(hex => {
+        const x = hex.q * miniMapScale + miniMapSize / 2;
+        const y = hex.r * miniMapScale + miniMapSize / 2;
+  
+        // 지형에 따른 색상
+        ctx.fillStyle = getTerrainColor(hex.terrain);
+        ctx.fillRect(x, y, 3, 3);
+      });
+  
+      // 현재 보고 있는 영역 표시
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.strokeRect(
+        mapOffset.x * miniMapScale, 
+        mapOffset.y * miniMapScale, 
+        miniMapSize * mapScale, 
+        miniMapSize * mapScale
+      );
+    }, [mapData, mapOffset, mapScale]);
+  
+    
+  
+    return (
+      <div className="absolute bottom-4 right-4">
+        <button 
+          onClick={() => setIsMiniMapExpanded(!isMiniMapExpanded)}
+          className="absolute top-0 right-0 z-10 bg-slate-700 p-1 rounded"
+        >
+          {isMiniMapExpanded ? '▼' : '▲'}
+        </button>
+        {isMiniMapExpanded && (
+          <canvas
+            ref={miniMapRef}
+            width={miniMapSize}
+            height={miniMapSize}
+            onClick={handleMiniMapClick}
+            className="bg-slate-800 bg-opacity-70 rounded-lg cursor-pointer"
+          />
+        )}
+      </div>
+    );
+  };
   // 헥스 그리드 상수
   const HEX_SIZE = 40; // 육각형 크기
   const HEX_HEIGHT = HEX_SIZE * 2;
@@ -313,42 +321,7 @@ useEffect(() => {
     return { x, y };
   };
   
-  // 픽셀 좌표를 헥스 좌표로 변환
-  const pixelToHex = (mouseX: number, mouseY: number) => {
-    // 현재 스케일과 오프셋을 고려한 좌표 보정
-    const adjustedX = (mouseX - offset.x) / scale;
-    const adjustedY = (mouseY - offset.y) / scale;
-    
-    // 육각형 그리드 좌표 계산을 위한 계산식 개선
-    const q = (Math.sqrt(3)/3 * adjustedX - 1/3 * adjustedY) / HEX_SIZE;
-    const r = (2/3 * adjustedY) / HEX_SIZE;
-    
-    // 큐브 좌표계 규칙 적용 (q + r + s = 0)
-    const s = -q - r;
-    
-    // 가장 가까운 헥스 좌표로 반올림
-    return hexRound({ q, r, s });
-  };
-  const hexRound = (hex: { q: number, r: number, s: number }) => {
-    let q = Math.round(hex.q);
-    let r = Math.round(hex.r);
-    let s = Math.round(hex.s);
-    
-    const qDiff = Math.abs(q - hex.q);
-    const rDiff = Math.abs(r - hex.r);
-    const sDiff = Math.abs(s - hex.s);
-    
-    // q + r + s = 0 제약 조건 유지
-    if (qDiff > rDiff && qDiff > sDiff) {
-      q = -r - s;
-    } else if (rDiff > sDiff) {
-      r = -q - s;
-    } else {
-      s = -q - r;
-    }
-    
-    return { q, r, s };
-  };
+  
   // 맵 렌더링 함수
   const renderMap = (ctx: CanvasRenderingContext2D) => {
     mapData.forEach(hex => {
@@ -551,14 +524,9 @@ useEffect(() => {
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y
       });
-    } else if (mapData) {
-      // 마우스 호버링시 타일 정보
-      const { q, r, s } = pixelToHex(mouseX, mouseY);
-      const hoveredHex = mapData.find(tile => 
-        tile.q === q && tile.r === r && tile.s === s
-      );
-      
-      setHoveredTile(hoveredHex || null);
+    } else {
+      const hoveredTile = findNearestTile(mouseX, mouseY);
+      setHoveredTile(hoveredTile || null);
     }
   };
   
@@ -571,19 +539,29 @@ useEffect(() => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     
+    // 픽셀 좌표 계산
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+  
+    // 실제 위치 계산 로직 대신, 렌더링된 헥스 타일들과 비교
+    const nearestTile = findNearestTile(mouseX, mouseY);
     
-    const { q, r, s } = pixelToHex(mouseX, mouseY);
-    
-    // 실제 맵 데이터와 정확히 일치하는 타일 찾기
-    const clickedTile = mapData.find(tile => 
-      tile.q === q && tile.r === r && tile.s === s
-    );
-    
-    if (clickedTile && onTileClick) {
-      onTileClick(clickedTile);
+    if (nearestTile && onTileClick) {
+      onTileClick(nearestTile);
     }
+  };
+  
+  // 가장 가까운 타일 찾기
+  const findNearestTile = (mouseX: number, mouseY: number) => {
+    return mapData.find(tile => {
+      const { x, y } = hexToPixel(tile.q, tile.r);
+      const distance = Math.sqrt(
+        Math.pow(x - mouseX, 2) + Math.pow(y - mouseY, 2)
+      );
+      
+      // 타일 반경 내에 있는지 확인 (HEX_WIDTH의 일정 비율)
+      return distance < (HEX_WIDTH * scale / 2);
+    });
   };
   
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -665,21 +643,7 @@ useEffect(() => {
       </div>
     );
   }
-  const handleMiniMapClick = (q: number, r: number) => {
-    const { x, y } = hexToPixel(q, r);
-    
-    // 캔버스 중앙에 선택된 위치 배치
-    const container = containerRef.current;
-    if (container) {
-      const centerX = container.clientWidth / 2;
-      const centerY = container.clientHeight / 2;
-      
-      setOffset({
-        x: centerX - x,
-        y: centerY - y
-      });
-    }
-  };
+  
   return (
     <div className="relative h-full w-full bg-slate-900" ref={containerRef}>
       {/* 토스트 메시지 */}
@@ -747,7 +711,7 @@ useEffect(() => {
         mapData={mapData}
         mapOffset={offset}
         mapScale={scale}
-        
+        onMiniMapClick={handleMiniMapClick}
       />
     </div>
   );
