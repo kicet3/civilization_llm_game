@@ -21,7 +21,7 @@ class GameService {
    */
   async getGameOptions(): Promise<GameOptions> {
     try {
-      const response = await fetch(`${BASE_URL}/api/game/options`);
+      const response = await fetch(`${BASE_URL}/game/options`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -205,7 +205,7 @@ class GameService {
 async getMap(): Promise<{ hexagons: HexTile[] }> {
   try {
     // 백엔드 API 호출 - 이제 내륙 바다 맵 데이터를 반환함
-    const response = await fetch(`${BASE_URL}/api/map/data`);
+    const response = await fetch(`${BASE_URL}/map/data`);
     
     if (!response.ok) {
       const errorText = await response.text();

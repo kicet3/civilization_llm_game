@@ -20,16 +20,8 @@ import HexMap from './map-management/HexMap';
 import Toast from './ui/Toast';
 
 // 서비스 API 가져오기
-import gameService, { 
-  GameState, 
-  HexTile, 
-  Unit, 
-  City,
-  ResearchState,
-  PolicyState,
-  ReligionState,
-  DiplomacyState
-} from '@/services/gameService';
+import gameService from '@/services/gameService';
+import { GameState, HexTile, Unit, City, ResearchState, PolicyState, ReligionState, DiplomacyState } from '@/types/game';
 
 interface LogEntry {
   type: 'system' | 'advisor' | 'event' | 'player';
@@ -90,53 +82,6 @@ export default function GamePage() {
     type?: 'info' | 'success' | 'warning' | 'error';
   }>({ message: '', show: false });
   
-  // 게임 초기화
-  
-useEffect(() => {
-  const loadGameData = async () => {
-    try {
-      setIsLoading(true);
-      
-      // 초기 게임 상태 설정 (로컬에서 처리)
-      const initialState = {
-        turn: 1,
-        year: -4000,
-        resources: {
-          food: 10,
-          production: 5,
-          gold: 20,
-          science: 3,
-          culture: 2,
-          faith: 1,
-          happiness: 10
-        },
-        cities: [],
-        units: []
-      };
-      
-      setGameState(initialState);
-      setTurn(initialState.turn);
-      setYear(initialState.year);
-      
-      // 맵 데이터만 가져오기
-      const { hexagons } = await gameService.getMap();
-      setMapData(hexagons);
-      
-      // 초기 로그 메시지
-      addLog('system', '게임이 시작되었습니다.', initialState.turn);
-      addLog('advisor', `새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.`, initialState.turn);
-      
-      setIsLoading(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '게임 데이터 로드 실패');
-      setIsLoading(false);
-      showToast('게임 데이터 로드 실패', 'error');
-    }
-  };
-
-  loadGameData();
-}, [mapType, difficulty, playerCiv, civCount, gameMode]);
-  
   // 토스트 메시지 표시
   const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     setToast({ message, show: true, type });
@@ -149,6 +94,66 @@ useEffect(() => {
   const addLog = useCallback((type: LogEntry['type'], content: string, currentTurn: number) => {
     setLog(prev => [...prev, { type, content, turn: currentTurn }]);
   }, []);
+  
+  // 직접 /game 경로로 접근한 경우 홈으로 리디렉션
+  useEffect(() => {
+    // 필수 파라미터가 없는 경우 홈으로 이동
+    if (!searchParams.has('map') && !searchParams.has('id')) {
+      console.log('유효하지 않은 접근: /game -> /');
+      router.replace('/');
+    }
+  }, [searchParams, router]);
+  
+  // 게임 초기화
+  useEffect(() => {
+    // 필수 파라미터가 없는 경우 로드하지 않음
+    if (!searchParams.has('map') && !searchParams.has('id')) {
+      return;
+    }
+    
+    const loadGameData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // 초기 게임 상태 설정 (로컬에서 처리)
+        const initialState = {
+          turn: 1,
+          year: -4000,
+          resources: {
+            food: 10,
+            production: 5,
+            gold: 20,
+            science: 3,
+            culture: 2,
+            faith: 1,
+            happiness: 10
+          },
+          cities: [],
+          units: []
+        };
+        
+        setGameState(initialState);
+        setTurn(initialState.turn);
+        setYear(initialState.year);
+        
+        // 맵 데이터만 가져오기
+        const { hexagons } = await gameService.getMap();
+        setMapData(hexagons);
+        
+        // 초기 로그 메시지
+        addLog('system', '게임이 시작되었습니다.', initialState.turn);
+        addLog('advisor', `새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.`, initialState.turn);
+        
+        setIsLoading(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '게임 데이터 로드 실패');
+        setIsLoading(false);
+        showToast('게임 데이터 로드 실패', 'error');
+      }
+    };
+
+    loadGameData();
+  }, [mapType, difficulty, playerCiv, civCount, gameMode, searchParams, router, addLog]);
   
   // 턴 종료 처리
   const endTurn = useCallback(async () => {
