@@ -2,20 +2,16 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
+from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Optional
+from models.map import MapType, Difficulty
 
 class GameSpeed(str, Enum):
     """게임 속도 enum"""
     FAST = "빠름"     # 100턴
     NORMAL = "보통"   # 250턴
     LONG = "장기"     # 500턴
-
-class MapType(str, Enum):
-    """맵 타입 enum"""
-    CONTINENTS = "대륙"
-    ISLANDS = "섬"
-    PANGAEA = "판게아"
-    INLAND_SEA = "내륙해"
-    RANDOM = "무작위"
 
 class Difficulty(str, Enum):
     """난이도 enum"""
@@ -28,14 +24,6 @@ class Difficulty(str, Enum):
     IMMORTAL = "불멸"
     DEITY = "신"
 
-class GameSessionCreate(BaseModel):
-    """게임 세션 생성을 위한 모델"""
-    playerName: str
-    mapType: MapType = MapType.CONTINENTS
-    difficulty: Difficulty = Difficulty.PRINCE
-    gameSpeed: GameSpeed = GameSpeed.NORMAL
-    mapWidth: int = 20
-    mapHeight: int = 15
 
 class GameSessionResponse(BaseModel):
     """게임 세션 응답 모델"""
@@ -73,3 +61,13 @@ class GameState(BaseModel):
     policy: Optional[Dict[str, Any]] = None
     religion: Optional[Dict[str, Any]] = None
     diplomacy: Optional[Dict[str, Any]] = None
+
+
+class GameSessionCreate(BaseModel):
+    """게임 세션 생성을 위한 모델"""
+    playerName: str
+    mapType: MapType = MapType.CONTINENTS
+    difficulty: Difficulty = Difficulty.PRINCE
+    gameSpeed: str = "normal"  # 추후 enum으로 변경 가능
+    playerCiv: str  # 선택한 문명 
+    civCount: int = Field(default=8, ge=5, le=10)  # 문명 수 제한

@@ -153,26 +153,35 @@ class GameService {
   /**
    * 게임 상태 초기화
    */
-  async startGame(
-    options: {
-      mapType: string;
-      playerName: string;
-      playerCiv: string;
-      difficulty: string;
-      civCount: number;
-    }
-  ): Promise<GameState> {
-    const response = await fetch(`${BASE_URL}/game/start`, {
+  async startGame({
+    mapType,
+    playerName,
+    playerCiv,
+    difficulty,
+    civCount
+  }: {
+    mapType: string;
+    playerName: string;
+    playerCiv: string;
+    difficulty: string;
+    civCount: number;
+  }): Promise<GameState> {
+    const response = await fetch(`${BASE_URL}/api/game/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(options),
+      body: JSON.stringify({
+        mapType,
+        playerName,
+        playerCiv,
+        difficulty,
+        civCount
+      }),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`게임 시작 실패: ${errorText}`);
+      throw new Error('게임 시작 실패');
     }
 
     const data = await response.json();
@@ -188,7 +197,7 @@ class GameService {
       throw new Error('게임이 시작되지 않았습니다');
     }
 
-    const response = await fetch(`${BASE_URL}/game/state?gameId=${this.gameId}`);
+    const response = await fetch(`${BASE_URL}/api/game/state?gameId=${this.gameId}`);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -206,7 +215,7 @@ class GameService {
       throw new Error('게임이 시작되지 않았습니다');
     }
 
-    const response = await fetch(`${BASE_URL}/game/endturn`, {
+    const response = await fetch(`${BASE_URL}/api/game/endturn`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -222,13 +231,28 @@ class GameService {
     return await response.json();
   }
 
+  /**
+   * 게임 옵션 조회
+   */
+  async getGameOptions(): Promise<{
+    mapTypes: { id: string; name: string; description: string }[];
+    difficulties: { id: string; name: string; description: string }[];
+  }> {
+    const response = await fetch(`${BASE_URL}/api/map/options`);
+    
+    if (!response.ok) {
+      throw new Error('게임 옵션 로드 실패');
+    }
+
+    return await response.json();
+  }
   // 다른 모든 메서드도 비슷한 방식으로 BASE_URL 사용
   async getMap(): Promise<{ hexagons: HexTile[] }> {
     if (!this.gameId) {
       throw new Error('게임이 시작되지 않았습니다');
     }
 
-    const response = await fetch(`${BASE_URL}/map?gameId=${this.gameId}`);
+    const response = await fetch(`${BASE_URL}/api/map?gameId=${this.gameId}`);
     
     if (!response.ok) {
       const errorText = await response.text();

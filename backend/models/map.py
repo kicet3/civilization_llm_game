@@ -1,6 +1,34 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+
 from enum import Enum
+from pydantic import BaseModel
+from typing import Optional,Dict,Any
+from datetime import datetime
+from typing import List
+
+class MapType(str, Enum):
+    """맵 타입 enum"""
+    CONTINENTS = "대륙"      # Continents
+    PANGAEA = "판게아"        # Pangaea
+    ARCHIPELAGO = "섬"       # Archipelago
+    FRACTAL = "무작위"        # Fractal
+    SMALL_CONTINENTS = "작은대륙"  # Small Continents
+    TERRA = "테라"            # Terra
+    TILTED_AXIS = "기울어진축"   # Tilted Axis
+    INLAND_SEA = "내륙해"     # Inland Sea
+    SHUFFLE = "무작위"        # Shuffle
+    DONUT = "도넛"            # Donut
+
+class Difficulty(str, Enum):
+    """난이도 enum"""
+    SETTLER = "정착자"     # Settler
+    CHIEFTAIN = "족장"    # Chieftain
+    WARLORD = "군주"      # Warlord
+    PRINCE = "왕자"       # Prince
+    KING = "왕"          # King
+    EMPEROR = "황제"      # Emperor
+    IMMORTAL = "불멸"     # Immortal
+    DEITY = "신"         # Deity
+
 
 class TerrainType(str, Enum):
     """지형 타입 enum"""
