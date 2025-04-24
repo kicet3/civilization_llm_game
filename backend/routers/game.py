@@ -721,53 +721,67 @@ async def create_game_session(request: GameSessionCreate):
         )
 
 
-@router.get("/options", response_model=GameOptionsResponse)
+@router.get("/options", response_model=Dict[str, List[Dict[str, str]]])
 async def get_game_options():
     """게임 옵션 목록 반환"""
     try:
-        map_types = await prisma_client.map_type.find_many()
+        # 맵 타입 조회
+        map_types = await prisma_client.maptype.find_many()
+        
+        # 난이도 조회
         difficulties = await prisma_client.difficulty.find_many()
+        
+        # 문명 조회
         civilizations = await prisma_client.civilization.find_many()
-        game_modes = await prisma_client.game_mode.find_many()
-        civ_type_map = { civ.id: civ.name for civ in civilizations }
         
-        return GameOptionsResponse(
-            success=True,
-            data=GameOptions(
-                mapTypes=[
-                    {
-                        "id": map_type.id,
-                        "name": map_type.name,
-                        "description": map_type.description
-                    } for map_type in map_types
-                ],
-                difficulties=[
-                    {
-                        "id": difficulty.id,
-                        "name": difficulty.name,
-                        "description": difficulty.description
-                    } for difficulty in difficulties
-                ],
-                civilizations=[
-                    {
-                        "id": civilization.id,
-                        "name": civilization.name,
-                        "description": civilization.description
-                    } for civilization in civilizations
-                ],
-                gameModes=[
-                    {
-                        "id": game_mode.id,
-                        "name": game_mode.name,
-                        "description": game_mode.description
-                    } for game_mode in game_modes
-                ],
-                civTypeMap=civ_type_map
-            )
-        )
+        # 게임 모드 조회 
+        game_modes = await prisma_client.gamemode.find_many()
         
+        # 응답 데이터 구성
+        map_types_response = [
+            {
+                "id": map_type.id,
+                "name": map_type.name,
+                "description": map_type.description or get_map_type_description(MapType(map_type.id))
+            } for map_type in map_types
+        ]
+        
+        difficulties_response = [
+            {
+                "id": difficulty.id,
+                "name": difficulty.name,
+                "description": difficulty.description or get_difficulty_description(Difficulty(difficulty.id))
+            } for difficulty in difficulties
+        ]
+        
+        civilizations_response = [
+            {
+                "id": civ.id,
+                "name": civ.name,
+                "leader": civ.leader,
+                "specialAbility": civ.specialAbility
+            } for civ in civilizations
+        ]
+        
+        game_modes_response = [
+            {
+                "id": mode.id,
+                "name": mode.name,
+                "turns": mode.turns,
+                "estimatedTime": mode.estimatedTime,
+                "description": mode.description
+            } for mode in game_modes
+        ]
+        
+        return {
+            "mapTypes": map_types_response,
+            "difficulties": difficulties_response,
+            "civilizations": civilizations_response,
+            "gameModes": game_modes_response
+        }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"게임 옵션 조회 중 오류 발생: {str(e)}"
         )
+
