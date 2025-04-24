@@ -101,43 +101,85 @@ export default function GameModeSelect() {
   const [userId, setUserId] = useState<string | null>(null);
 
   // 사용자 등록 또는 로그인 핸들러
-  const handleUserAuth = async () => {
-    try {
-      setIsLoading(true);
-      let authResponse;
-
-      if (registrationType === 'register') {
-        // 새 사용자 등록
-        authResponse = await authService.registerUser({
-          username: userName,
-          password,
-          email
-        });
-      } else {
-        // 기존 사용자 로그인
-        authResponse = await authService.loginUser({
-          username: userName,
-          password: password
-        });
-      }
-
-      // 토큰 저장
-      authService.saveToken(authResponse.token);
-      
-      // userId 상태 설정
-      setUserId(authResponse.userId);
-
-      // 다음 단계로 진행
-      setShowInitialChoice(false);
-      setLoadGameMode(false);
-      setStep(1);
-    } catch (error) {
-      // 에러 처리
-      setErrorMessage(error instanceof Error ? error.message : '인증 과정에서 오류가 발생했습니다.');
-    } finally {
-      setIsLoading(false);
+const handleUserAuth = async () => {
+  // 이메일 형식 검증
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  // 입력 유효성 검사
+  if (!userName.trim()) {
+    setErrorMessage('사용자 이름을 입력해주세요.');
+    return;
+  }
+  
+  if (!password.trim()) {
+    setErrorMessage('비밀번호를 입력해주세요.');
+    return;
+  }
+  
+  if (registrationType === 'register') {
+    if (!email.trim()) {
+      setErrorMessage('이메일을 입력해주세요.');
+      return;
     }
-  };
+    
+    if (!emailRegex.test(email)) {
+      setErrorMessage('유효한 이메일 형식이 아닙니다.');
+      return;
+    }
+    
+    if (password.length < 6) {
+      setErrorMessage('비밀번호는 최소 6자 이상이어야 합니다.');
+      return;
+    }
+  }
+
+  try {
+    setIsLoading(true);
+    setErrorMessage('');
+
+    let authResponse;
+
+    if (registrationType === 'register') {
+      // 새 사용자 등록
+      authResponse = await authService.registerUser({
+        username: userName,
+        password,
+        email
+      });
+    } else {
+      // 기존 사용자 로그인
+      authResponse = await authService.loginUser({
+        username: userName,
+        password
+      });
+    }
+
+    // 토큰 저장
+    authService.saveToken(authResponse.token);
+    
+    // userId 상태 설정
+    setUserId(authResponse.userId);
+
+    // 성공 시 토스트 메시지 추가
+    const successMessage = registrationType === 'register' 
+      ? '성공적으로 회원가입되었습니다.' 
+      : '로그인되었습니다.';
+    
+    // 다음 단계로 진행
+    setShowInitialChoice(false);
+    setLoadGameMode(false);
+    setStep(1);
+  } catch (error) {
+    // 에러 처리
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : '인증 과정에서 오류가 발생했습니다.';
+    
+    setErrorMessage(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   // 게임 시작
   const handleStartGame = () => {
@@ -281,8 +323,8 @@ export default function GameModeSelect() {
   // 새 게임 시작하기
   const handleStartNewGame = () => {
     setShowInitialChoice(false);
-    setLoadGameMode(true);
-    setRegistrationType('login');
+    setLoadGameMode(false);
+    setRegistrationType('register');
   };
 
   const handleShowLoadGame = () => {
