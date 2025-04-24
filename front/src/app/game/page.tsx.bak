@@ -8,6 +8,7 @@ import ResearchPanel from './research-management/ResearchPanel';
 import gameService from '@/services/gameService';
 import { useToast } from './ui/useToast';
 import { Send, Clock } from 'lucide-react';
+import TurnManager, { TurnPhase } from './TurnManager';
 
 interface LogEntry {
   type: 'system' | 'advisor' | 'event' | 'player';
@@ -23,7 +24,7 @@ export default function GamePage() {
   const [gameId, setGameId] = useState<string>('');
   const [userId, setUserId] = useState<string>('default-user-id');
   const [turn, setTurn] = useState<number>(1);
-  const [phase, setPhase] = useState<'player' | 'ai' | 'resolve'>('player');
+  const [phase, setPhase] = useState<TurnPhase>('player');
   
   // 로그 관련 상태
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -43,11 +44,6 @@ export default function GamePage() {
   
   // 현재 선택된 탭 상태 관리
   const [activeTab, setActiveTab] = useState('map');
-
-  // 게임 로그 추가
-  const addLog = useCallback((type: LogEntry['type'], content: string, currentTurn: number) => {
-    setLog(prev => [...prev, { type, content, turn: currentTurn }]);
-  }, []);
 
   // 컴포넌트 마운트 시 게임 ID 및 유저 ID 확인
   useEffect(() => {
@@ -71,15 +67,9 @@ export default function GamePage() {
       setGameId(storedGameId);
       setIsLoading(false);
       
-      // 초기 로그 메시지 추가 - 컴포넌트 마운트 시 한 번만 실행되도록 플래그 사용
-      const hasInitialLogsKey = 'hasInitialLogs';
-      const hasInitialLogs = localStorage.getItem(hasInitialLogsKey);
-      
-      if (!hasInitialLogs) {
-        addLog('system', '게임이 로드되었습니다.', turn);
-        addLog('advisor', '문명의 지도자님, 환영합니다! 당신의 문명을 이끌어 승리하세요.', turn);
-        localStorage.setItem(hasInitialLogsKey, 'true');
-      }
+      // 초기 로그 메시지 추가
+      addLog('system', '게임이 로드되었습니다.', turn);
+      addLog('advisor', '문명의 지도자님, 환영합니다! 당신의 문명을 이끌어 승리하세요.', turn);
     } else {
       // 게임 ID가 없으면 게임 선택 페이지로 이동
       showToast({
@@ -93,7 +83,12 @@ export default function GamePage() {
         router.push('/game/select-mode');
       }, 2000);
     }
-  }, [router, showToast, searchParams, addLog, turn]);
+  }, [router, showToast, searchParams]);
+
+  // 게임 로그 추가
+  const addLog = useCallback((type: LogEntry['type'], content: string, currentTurn: number) => {
+    setLog(prev => [...prev, { type, content, turn: currentTurn }]);
+  }, []);
 
   // 턴 종료 처리
   const endTurn = useCallback(async () => {
@@ -108,14 +103,13 @@ export default function GamePage() {
       
       // TODO: 턴 종료 API 호출 및 이벤트 처리
       // 임시로 1초 후에 다음 턴으로 넘어가는 코드
-      const nextTurn = turn + 1;
       setTimeout(() => {
-        setTurn(nextTurn);
+        setTurn(prev => prev + 1);
         setPhase('player');
-        addLog('system', `턴 ${nextTurn} 시작`, nextTurn);
+        addLog('system', `턴 ${turn + 1} 시작`, turn + 1);
         showToast({
           title: "턴 시작",
-          description: `턴 ${nextTurn} 시작`,
+          description: `턴 ${turn + 1} 시작`,
           variant: "default"
         });
       }, 1000);

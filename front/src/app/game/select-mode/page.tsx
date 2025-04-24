@@ -9,7 +9,8 @@ import {
   Difficulty, 
   Civilization, 
   GameMode, 
-  VictoryType
+  VictoryType,
+  SavedGame 
 } from '@/types/game';
 import { 
   ArrowLeft, Clock, Calendar, Users, Globe, Wand2, Zap, Award, PlayCircle, Map, Star, User, Sword,
@@ -17,16 +18,6 @@ import {
   Crown, GraduationCap, Library, Landmark, Shell, Ship, Sparkles
 } from 'lucide-react';
 import authService from '@/services/authService';
-import crypto from 'crypto';
-
-interface SavedGame {
-  id: string;
-  name: string;
-  date: string;
-  turn: number;
-  civName?: string;
-  mapType: string;
-}
 
 export default function GameModeSelect() {
   const router = useRouter();
@@ -56,9 +47,6 @@ export default function GameModeSelect() {
   const [errorMessage, setErrorMessage] = useState("");
   const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-
-  // 새로운 상태 - 사용자 이름
-  const [playerName, setPlayerName] = useState('');
 
   // 문명 수 선택 옵션 (5~10, 6개)
   const civCounts: number[] = Array.from({ length: 6 }, (_, i) => i + 5); // [5,6,...,10]
@@ -182,17 +170,13 @@ export default function GameModeSelect() {
 
   // 게임 시작
   const handleStartGame = () => {
-    // 사용자 이름이 제공되었는지 확인
-    if (!playerName.trim()) {
-      setErrorMessage('사용자 이름을 입력해주세요.');
+    if (!userId) {
+      setErrorMessage('먼저 로그인 또는 회원가입을 해주세요.');
       return;
     }
 
-    // SHA-256 해시 생성 
-    const hashedUserId = crypto.createHash('sha256').update(playerName).digest('hex');
-
-    // 게임 페이지로 이동 (해시화된 userId와 함께)
-    const params: Record<string, string> = { userId: hashedUserId };
+    // 게임 페이지로 이동 (userId와 함께)
+    const params: Record<string, string> = { userId };
     if (selectedMode) params.mode = selectedMode;
     if (selectedDifficulty) params.difficulty = selectedDifficulty;
     if (selectedCivilization) params.civ = selectedCivilization;
@@ -271,46 +255,54 @@ export default function GameModeSelect() {
     loadGameOptions();
   }, []);
 
-  // 로드 게임 관련 함수
-  const handleLoadGame = () => {
+  // 저장된 게임 로드 함수
+  const handleLoadGame = async () => {
     setIsLoading(true);
     setErrorMessage("");
     
-    // 저장된 게임들을 로컬 스토리지에서 가져오는 로직으로 변경
     try {
-      // 로컬 스토리지에서 저장된 게임 불러오기
-      const savedGamesStr = localStorage.getItem('savedGames') || '[]';
-      const savedGamesData = JSON.parse(savedGamesStr);
+      const response = await gameService.authenticateUser(userName, password);
       
-      if (savedGamesData.length === 0) {
-        setErrorMessage("저장된 게임이 없습니다.");
+      if (response.success) {
+        // 인증 성공 시 사용자의 저장된 게임 목록 가져오기
+        const games = await gameService.getSavedGames(userName);
+        setSavedGames(games);
+        
+        // 에러 메시지 초기화
+        setErrorMessage("");
       } else {
-        setSavedGames(savedGamesData);
+        setErrorMessage("사용자 이름 또는 비밀번호가 일치하지 않습니다.");
       }
     } catch (error) {
-      console.error("Failed to load saved games:", error);
-      setErrorMessage("저장된 게임을 불러오는 데 실패했습니다.");
+      setErrorMessage("인증 과정에서 오류가 발생했습니다. 다시 시도해주세요.");
+      console.error("인증 오류:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 선택한 저장 게임 불러오기
-  const handleLoadSelectedGame = () => {
+  // 선택한 저장 게임 로드하기
+  const handleLoadSelectedGame = async () => {
     if (!selectedGameId) {
-      setErrorMessage("먼저 저장된 게임을 선택해주세요.");
+      setErrorMessage("게임을 선택해주세요.");
       return;
     }
 
     setIsLoading(true);
-    
     try {
-      // 로컬 스토리지에서 저장된 게임 ID 기반으로 게임 정보 불러오기
-      // 실제 구현에서는 서버 API를 호출하여 저장된 게임을 불러올 수 있음
-      router.push(`/game?loadGameId=${selectedGameId}`);
+      // 선택한 게임 ID로 게임 로드 API 호출
+      const result = await gameService.loadGame(selectedGameId);
+      
+      if (result.success) {
+        // 게임 페이지로 이동
+        router.push(`/game?id=${selectedGameId}`);
+      } else {
+        setErrorMessage("게임을 불러오는 데 실패했습니다.");
+      }
     } catch (error) {
-      console.error("Failed to load selected game:", error);
-      setErrorMessage("선택한 게임을 불러오는 데 실패했습니다.");
+      setErrorMessage("게임을 불러오는 중 오류가 발생했습니다.");
+      console.error("게임 로드 오류:", error);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -319,7 +311,7 @@ export default function GameModeSelect() {
   const handleStartNewGame = () => {
     setShowInitialChoice(false);
     setLoadGameMode(false);
-    setStep(1);
+    setRegistrationType('register');
   };
 
   const handleShowLoadGame = () => {
@@ -329,10 +321,22 @@ export default function GameModeSelect() {
   };
 
   const goToNextStep = () => {
-    if (step < 6) {
+    if (step < 5) {
       setStep(step + 1);
     } else {
-      handleStartGame();
+      // 게임 시작 페이지로 이동 (선택값 전달)
+      const params: Record<string, string> = {};
+      if (selectedMode) params.mode = selectedMode;
+      if (selectedDifficulty) params.difficulty = selectedDifficulty;
+      if (selectedCivilization) params.civ = selectedCivilization;
+      if (selectedMapType) params.map = selectedMapType;
+      if (selectedCivCount) params.civCount = String(selectedCivCount);
+
+      const paramString = Object.entries(params)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+
+      router.push(`/game${paramString ? `?${paramString}` : ''}`);
     }
   };
 
@@ -342,7 +346,8 @@ export default function GameModeSelect() {
       setShowInitialChoice(true);
       setLoadGameMode(false);
       setErrorMessage("");
-      setPlayerName("");
+      setUserName("");
+      setPassword("");
       setSavedGames([]);
       setSelectedGameId(null);
     } else if (step > 1) {
@@ -356,21 +361,20 @@ export default function GameModeSelect() {
   // 현재 단계에 따른 버튼 텍스트
   const getNextButtonText = () => {
     if (loadGameMode) return '선택한 게임 불러오기';
-    if (step === 6) return '게임 시작';
+    if (step === 5) return '게임 시작';
     return '다음';
   };
 
   // 단계별 선택 여부 확인
   const isCurrentStepSelected = () => {
-    if (loadGameMode) return selectedGameId !== null || (savedGames.length === 0 && playerName);
+    if (loadGameMode) return selectedGameId !== null || (savedGames.length === 0 && userName && password);
     
     switch (step) {
-      case 1: return !!playerName;
-      case 2: return !!selectedMode;
-      case 3: return !!selectedDifficulty;
-      case 4: return !!selectedCivilization;
-      case 5: return !!selectedMapType;
-      case 6: return !!selectedCivCount;
+      case 1: return !!selectedMode;
+      case 2: return !!selectedDifficulty;
+      case 3: return !!selectedCivilization;
+      case 4: return !!selectedMapType;
+      case 5: return !!selectedCivCount;
       default: return false;
     }
   };
@@ -390,29 +394,41 @@ export default function GameModeSelect() {
   // 초기 선택 화면 렌더링
   const renderInitialChoice = () => {
     return (
-      <div className="w-full max-w-4xl mx-auto flex flex-col items-center justify-center py-6">
-        <h2 className="text-3xl font-bold mb-8 text-center">게임 모드를 선택하세요</h2>
-        
-        <div className="w-full max-w-xl grid grid-cols-1 gap-6">
-          <button 
+      <div className="w-full max-w-4xl mx-auto">
+        <h2 className="text-3xl font-bold mb-8 text-center">게임 선택</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* 새 게임 시작 */}
+          <div 
+            className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
             onClick={handleStartNewGame}
-            className="h-20 flex items-center justify-center bg-gradient-to-r from-blue-800 to-blue-600 rounded-xl shadow-lg border border-blue-500 hover:from-blue-700 hover:to-blue-500 transition-all"
           >
-            <PlayCircle className="mr-3" size={24} />
-            <span className="text-xl font-bold">새 게임 시작하기</span>
-          </button>
-          
-          <button 
-            onClick={() => {
-              setShowInitialChoice(false);
-              setLoadGameMode(true);
-              handleLoadGame();
-            }}
-            className="h-20 flex items-center justify-center bg-gradient-to-r from-slate-800 to-slate-600 rounded-xl shadow-lg border border-slate-500 hover:from-slate-700 hover:to-slate-500 transition-all"
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
+                <PlayCircle size={32} />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold mb-3 text-center">새 게임 시작하기</h3>
+            <p className="text-gray-400 text-center">
+              새로운 문명의 역사를 시작하세요.<br />
+              게임 모드, 난이도, 문명을 선택할 수 있습니다.
+            </p>
+          </div>
+
+          {/* 게임 불러오기 비활성화 */}
+          <div 
+            className="border-2 border-gray-700 rounded-xl p-6 cursor-not-allowed bg-slate-800 opacity-50"
           >
-            <Save className="mr-3" size={24} />
-            <span className="text-xl font-bold">저장된 게임 불러오기</span>
-          </button>
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
+                <Save size={32} />
+              </div>
+            </div>
+            <h3 className="text-xl font-bold mb-3 text-center">게임 불러오기</h3>
+            <p className="text-gray-400 text-center">
+              이전에 저장한 게임을 계속 플레이하세요.<br />
+              저장된 게임 목록에서 선택할 수 있습니다.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -422,7 +438,7 @@ export default function GameModeSelect() {
   const renderLoadGame = () => {
     return (
       <div className="w-full max-w-4xl mx-auto">
-        <h2 className="text-3xl font-bold mb-8 text-center">저장된 게임 불러오기</h2>
+        <h2 className="text-3xl font-bold mb-8 text-center">게임 불러오기</h2>
         
         {/* 에러 메시지 */}
         {errorMessage && (
@@ -432,54 +448,98 @@ export default function GameModeSelect() {
           </div>
         )}
 
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-10">
-            <Loader2 size={48} className="animate-spin text-blue-500 mb-4" />
-            <p className="text-xl">저장된 게임을 불러오는 중...</p>
-          </div>
-        ) : savedGames.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10">
-            <p className="text-xl mb-6">저장된 게임이 없습니다.</p>
+        {savedGames.length === 0 ? (
+          <div className="bg-slate-800 rounded-lg p-6 mb-6">
+            <h3 className="text-xl font-bold mb-4">사용자 인증</h3>
+            <p className="text-gray-400 mb-6">저장된 게임을 불러오려면 사용자 이름과 비밀번호를 입력하세요.</p>
             
-            <div className="max-w-md w-full">
-              <div className="mb-6">
-                <label htmlFor="playerName" className="block text-sm font-medium text-gray-300 mb-1">플레이어 이름</label>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="userName" className="block text-sm font-medium text-gray-300 mb-1">사용자 이름</label>
                 <input 
                   type="text" 
-                  id="playerName" 
-                  value={playerName} 
-                  onChange={(e) => setPlayerName(e.target.value)} 
-                  className="w-full px-4 py-3 bg-slate-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-lg"
-                  placeholder="게임에서 사용할 이름을 입력하세요"
+                  id="userName" 
+                  value={userName} 
+                  onChange={(e) => setUserName(e.target.value)} 
+                  className="w-full px-4 py-2 bg-slate-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
+                  placeholder="사용자 이름 입력"
                 />
               </div>
+              
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">비밀번호</label>
+                <input 
+                  type="password" 
+                  id="password" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  className="w-full px-4 py-2 bg-slate-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
+                  placeholder="비밀번호 입력"
+                />
+              </div>
+              
+              <button 
+                onClick={handleLoadGame}
+                disabled={!userName || !password || isLoading}
+                className={cn(
+                  "w-full mt-2 py-3 px-4 rounded-md font-medium flex items-center justify-center",
+                  (userName && password && !isLoading) 
+                    ? "bg-blue-600 hover:bg-blue-700 text-white" 
+                    : "bg-gray-700 text-gray-400 cursor-not-allowed"
+                )}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 size={20} className="mr-2 animate-spin" />
+                    인증 중...
+                  </>
+                ) : (
+                  <>
+                    <Lock size={20} className="mr-2" />
+                    시작하기
+                  </>
+                )}
+              </button>
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            {savedGames.map((game: SavedGame) => (
-              <div
-                key={game.id}
-                className={cn(
-                  "border-2 rounded-lg p-4 cursor-pointer transition-all",
-                  selectedGameId === game.id 
-                    ? "border-blue-500 bg-blue-900 bg-opacity-20" 
-                    : "border-gray-700 hover:border-gray-500"
-                )}
-                onClick={() => setSelectedGameId(game.id)}
-              >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-bold">{game.name}</h3>
-                    <p className="text-gray-400 text-sm">{game.date}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-300">턴 {game.turn}</p>
-                    <p className="text-xs text-gray-400">{game.mapType}</p>
-                  </div>
-                </div>
+          <div className="bg-slate-800 rounded-lg p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">저장된 게임 목록</h3>
+              <div className="text-green-400 flex items-center">
+                <CheckCircle size={16} className="mr-1" />
+                <span className="text-sm">{userName} 님으로 로그인됨</span>
               </div>
-            ))}
+            </div>
+            
+            <div className="space-y-3 max-h-96 overflow-y-auto mb-4">
+              {savedGames.map(game => (
+                <div 
+                  key={game.id} 
+                  className={cn(
+                    "p-4 border rounded-md cursor-pointer transition-all flex items-center justify-between",
+                    selectedGameId === game.id 
+                      ? "border-blue-500 bg-blue-900 bg-opacity-30" 
+                      : "border-gray-700 hover:border-gray-500 bg-slate-700"
+                  )}
+                  onClick={() => setSelectedGameId(game.id)}
+                >
+                  <div>
+                    <h4 className="font-bold">{game.name}</h4>
+                    <div className="text-sm text-gray-400 flex flex-wrap gap-3 mt-1">
+                      <span>문명: {game.civName}</span>
+                      <span>턴: {game.turn}</span>
+                      <span>저장일: {game.date}</span>
+                    </div>
+                  </div>
+                  {selectedGameId === game.id && (
+                    <div className="text-blue-400">
+                      <CheckCircle size={20} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -507,40 +567,9 @@ export default function GameModeSelect() {
       return renderLoadGame();
     }
     
-   // 새 게임 시작 화면 (6단계)
+   // 새 게임 시작 화면 (5단계)
    switch (step) {
     case 1:
-      return (
-        <div className="w-full max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold mb-8 text-center">사용자 이름 입력</h2>
-          
-          {/* 에러 메시지 */}
-          {errorMessage && (
-            <div className="mb-6 p-4 bg-red-900 bg-opacity-30 border border-red-500 rounded-md text-center text-red-300 flex items-center justify-center">
-              <XCircle size={20} className="mr-2" />
-              {errorMessage}
-            </div>
-          )}
-          
-          <div className="max-w-md mx-auto">
-            <div className="mb-6">
-              <label htmlFor="playerName" className="block text-sm font-medium text-gray-300 mb-1">플레이어 이름</label>
-              <input 
-                type="text" 
-                id="playerName" 
-                value={playerName} 
-                onChange={(e) => setPlayerName(e.target.value)} 
-                className="w-full px-4 py-3 bg-slate-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white text-lg"
-                placeholder="게임에서 사용할 이름을 입력하세요"
-              />
-            </div>
-            <p className="text-gray-400 text-sm text-center">
-              입력한 이름은 게임 내에서 플레이어를 식별하는 데 사용됩니다.
-            </p>
-          </div>
-        </div>
-      );
-    case 2:
       return (
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">게임 모드 선택</h2>
@@ -572,7 +601,7 @@ export default function GameModeSelect() {
           </div>
         </div>
       );
-    case 3:
+    case 2:
       return (
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">난이도 선택</h2>
@@ -595,7 +624,7 @@ export default function GameModeSelect() {
           </div>
         </div>
       );
-    case 4:
+    case 3:
       return (
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">문명 선택</h2>
@@ -629,7 +658,7 @@ export default function GameModeSelect() {
           </div>
         </div>
       );
-    case 5:
+    case 4:
       return (
         <div className="w-full max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-4 text-center">지도 유형 선택</h2>
@@ -659,7 +688,7 @@ export default function GameModeSelect() {
           </div>
         </div>
       );
-    case 6:
+    case 5:
       return (
         <div className="w-full max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">문명 수 선택</h2>
@@ -719,7 +748,7 @@ return (
     {!loadGameMode && !showInitialChoice && (
       <div className="w-full max-w-4xl mx-auto py-6 px-4">
         <div className="flex items-center justify-between mb-8 relative">
-          {[1, 2, 3, 4, 5, 6].map((stepNumber) => (
+          {[1, 2, 3, 4, 5].map((stepNumber) => (
             <div key={stepNumber} className="flex flex-col items-center z-10">
               <div className={cn(
                 "w-10 h-10 rounded-full flex items-center justify-center font-bold",
@@ -732,12 +761,11 @@ return (
                 {stepNumber}
               </div>
               <span className="text-xs mt-1 text-gray-400">
-                {stepNumber === 1 && '플레이어 이름'}
-                {stepNumber === 2 && '게임 모드'}
-                {stepNumber === 3 && '난이도'}
-                {stepNumber === 4 && '문명'}
-                {stepNumber === 5 && '지도 유형'}
-                {stepNumber === 6 && '문명 수'}
+                {stepNumber === 1 && '게임 모드'}
+                {stepNumber === 2 && '난이도'}
+                {stepNumber === 3 && '문명'}
+                {stepNumber === 4 && '지도 유형'}
+                {stepNumber === 5 && '문명 수'}
               </span>
             </div>
           ))}
@@ -778,7 +806,7 @@ return (
           ) : (
             <>
               {getNextButtonText()}
-              {loadGameMode || step === 6 ? (
+              {loadGameMode || step === 5 ? (
                 <PlayCircle className="ml-2" size={20} />
               ) : (
                 <ArrowLeft className="ml-2 rotate-180" size={20} />
