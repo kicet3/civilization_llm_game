@@ -23,11 +23,11 @@ export default function GameModeSelect() {
   const router = useRouter();
   
   // 게임 선택 상태
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
-  const [selectedCivilization, setSelectedCivilization] = useState<string | null>(null);
-  const [selectedMapType, setSelectedMapType] = useState<string | null>(null);
-  const [selectedCivCount, setSelectedCivCount] = useState<number>(8);
+  const [selectedMode, setSelectedMode] = useState<string | null>('short');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>('easy');
+  const [selectedCivilization, setSelectedCivilization] = useState<string | null>('korea');
+  const [selectedMapType, setSelectedMapType] = useState<string | null>('small_continents');
+  const [selectedCivCount, setSelectedCivCount] = useState<number>(6);
   const [step, setStep] = useState(1);
 
   // 게임 옵션 상태
@@ -101,85 +101,72 @@ export default function GameModeSelect() {
   const [userId, setUserId] = useState<string | null>(null);
 
   // 사용자 등록 또는 로그인 핸들러
-const handleUserAuth = async () => {
-  // 이메일 형식 검증
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
-  // 입력 유효성 검사
-  if (!userName.trim()) {
-    setErrorMessage('사용자 이름을 입력해주세요.');
-    return;
-  }
-  
-  if (!password.trim()) {
-    setErrorMessage('비밀번호를 입력해주세요.');
-    return;
-  }
-  
-  if (registrationType === 'register') {
-    if (!email.trim()) {
-      setErrorMessage('이메일을 입력해주세요.');
+  const handleUserAuth = async () => {
+    // 입력 유효성 검사
+    if (!userName.trim()) {
+      setErrorMessage('사용자 이름을 입력해주세요.');
       return;
     }
     
-    if (!emailRegex.test(email)) {
-      setErrorMessage('유효한 이메일 형식이 아닙니다.');
+    if (!password.trim()) {
+      setErrorMessage('비밀번호를 입력해주세요.');
       return;
     }
     
-    if (password.length < 6) {
-      setErrorMessage('비밀번호는 최소 6자 이상이어야 합니다.');
-      return;
-    }
-  }
-
-  try {
-    setIsLoading(true);
-    setErrorMessage('');
-
-    let authResponse;
-
     if (registrationType === 'register') {
-      // 새 사용자 등록
-      authResponse = await authService.registerUser({
-        username: userName,
-        password,
-        email
-      });
-    } else {
-      // 기존 사용자 로그인
-      authResponse = await authService.loginUser({
-        username: userName,
-        password
-      });
+      if (!email.trim()) {
+        setErrorMessage('이메일을 입력해주세요.');
+        return;
+      }
+      
+      if (password.length < 6) {
+        setErrorMessage('비밀번호는 최소 6자 이상이어야 합니다.');
+        return;
+      }
     }
-
-    // 토큰 저장
-    authService.saveToken(authResponse.token);
-    
-    // userId 상태 설정
-    setUserId(authResponse.userId);
-
-    // 성공 시 토스트 메시지 추가
-    const successMessage = registrationType === 'register' 
-      ? '성공적으로 회원가입되었습니다.' 
-      : '로그인되었습니다.';
-    
-    // 다음 단계로 진행
-    setShowInitialChoice(false);
-    setLoadGameMode(false);
-    setStep(1);
-  } catch (error) {
-    // 에러 처리
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : '인증 과정에서 오류가 발생했습니다.';
-    
-    setErrorMessage(errorMessage);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  
+    try {
+      setIsLoading(true);
+      setErrorMessage('');
+  
+      let authResponse;
+  
+      if (registrationType === 'register') {
+        // 새 사용자 등록
+        authResponse = await authService.registerUser({
+          username: userName,
+          password,
+          email
+        });
+      } else {
+        // 기존 사용자 로그인
+        authResponse = await authService.loginUser({
+          username: userName,
+          password
+        });
+      }
+  
+      // 토큰 저장
+      authService.saveToken(authResponse.token);
+      
+      // userId 상태 설정
+      setUserId(authResponse.userId);
+  
+      // 성공 시 다음 단계로 이동
+      setShowInitialChoice(false);
+      setLoadGameMode(false);
+      setStep(1);
+    } catch (error) {
+      // 에러 처리
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : '인증 과정에서 오류가 발생했습니다.';
+      
+      setErrorMessage(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 게임 시작
   const handleStartGame = () => {
@@ -405,47 +392,47 @@ const handleUserAuth = async () => {
   };
 
   // 초기 선택 화면 렌더링
-const renderInitialChoice = () => {
-  return (
-    <div className="w-full max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold mb-8 text-center">게임 선택</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* 새 게임 시작 */}
-        <div 
-          className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
-          onClick={handleStartNewGame}
-        >
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
-              <PlayCircle size={32} />
+  const renderInitialChoice = () => {
+    return (
+      <div className="w-full max-w-4xl mx-auto">
+        <h2 className="text-3xl font-bold mb-8 text-center">게임 선택</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* 새 게임 시작 */}
+          <div 
+            className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
+            onClick={handleStartNewGame}
+          >
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
+                <PlayCircle size={32} />
+              </div>
             </div>
+            <h3 className="text-xl font-bold mb-3 text-center">새 게임 시작하기</h3>
+            <p className="text-gray-400 text-center">
+              새로운 문명의 역사를 시작하세요.<br />
+              게임 모드, 난이도, 문명을 선택할 수 있습니다.
+            </p>
           </div>
-          <h3 className="text-xl font-bold mb-3 text-center">모드 선택하기</h3>
-          <p className="text-gray-400 text-center">
-            새로운 문명의 역사를 시작하세요.<br />
-            게임 모드, 난이도, 문명을 선택할 수 있습니다.
-          </p>
-        </div>
 
-        {/* 게임 불러오기 */}
-        <div 
-          className="border-2 border-gray-700 rounded-xl p-6 bg-slate-900 opacity-50 cursor-not-allowed"
-        >
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center opacity-50">
-              <Save size={32} className="text-gray-500" />
+          {/* 게임 불러오기 비활성화 */}
+          <div 
+            className="border-2 border-gray-700 rounded-xl p-6 cursor-not-allowed bg-slate-800 opacity-50"
+          >
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
+                <Save size={32} />
+              </div>
             </div>
+            <h3 className="text-xl font-bold mb-3 text-center">게임 불러오기</h3>
+            <p className="text-gray-400 text-center">
+              이전에 저장한 게임을 계속 플레이하세요.<br />
+              저장된 게임 목록에서 선택할 수 있습니다.
+            </p>
           </div>
-          <h3 className="text-xl font-bold mb-3 text-center text-gray-500">게임 불러오기 (곧 지원 예정)</h3>
-          <p className="text-gray-600 text-center">
-            개발 중인 기능입니다.<br />
-            앞으로 출시될 예정입니다.
-          </p>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   // 게임 불러오기 화면 렌더링
   const renderLoadGame = () => {
@@ -587,7 +574,7 @@ const renderInitialChoice = () => {
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">게임 모드 선택</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {gameModes.map((gameMode) => (
+            {gameModes.filter(gameMode => gameMode.id === 'short').map((gameMode) => (
               <div
                 key={gameMode.id}
                 className={cn(
@@ -604,8 +591,6 @@ const renderInitialChoice = () => {
                 <div className="flex items-center justify-center mb-4">
                   <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
                     {gameMode.id === 'short' && <Zap size={28} />}
-                    {gameMode.id === 'standard' && <Clock size={28} />}
-                    {gameMode.id === 'long' && <Calendar size={28} />}
                   </div>
                 </div>
                 <h3 className="text-lg font-bold mb-2">{gameMode.name}</h3>
@@ -621,16 +606,7 @@ const renderInitialChoice = () => {
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">난이도 선택</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* 난이도 데이터가 아직 없는 경우 기본 난이도 제공 */}
-            {(difficulties.length === 0 ? [
-              { id: 'settler', name: '초보자', description: '가장 쉬운 난이도' },
-              { id: 'chieftain', name: '초급', description: '초보자를 위한 도전적인 난이도' },
-              { id: 'warlord', name: '중급', description: '보통의 도전 수준' },
-              { id: 'prince', name: '고급', description: '균형 잡힌 난이도' },
-              { id: 'king', name: '최상급', description: '높은 수준의 도전' },
-              { id: 'immortal', name: '영웅', description: '매우 어려운 난이도' },
-              { id: 'deity', name: '신', description: '최고 난이도' },
-            ] : difficulties).map((difficulty) => (
+            {difficulties.filter(difficulty => difficulty.id === 'easy').map((difficulty) => (
               <div
                 key={difficulty.id}
                 className={cn(
@@ -648,78 +624,35 @@ const renderInitialChoice = () => {
           </div>
         </div>
       );
-    
     case 3:
-      // 문명 데이터를 타입별로 그룹화
-      const civsByType: Record<string, typeof civilizations> = {};
-      
-      // 백엔드에서 받은 문명 정보가 없는 경우를 위한 기본 문명 목록
-      const defaultCivs = civilizations.length === 0 ? [
-        { id: 'korea', name: '한국', leader: '세종대왕', specialAbility: '과학 관련 위대한 인물 생성 보너스' },
-        { id: 'japan', name: '일본', leader: '오다 노부나가', specialAbility: '유닛 체력 1까지 피해 감소 없음' },
-        { id: 'china', name: '중국', leader: '무측천', specialAbility: '위대한 장군 생성 보너스' },
-        { id: 'mongolia', name: '몽골', leader: '칭기즈 칸', specialAbility: '도시국가 공격에 보너스' },
-        { id: 'india', name: '인도', leader: '간디', specialAbility: '인구가 많을수록 행복도에 패널티 감소' },
-        { id: 'aztec', name: '아즈텍', leader: '몬테수마', specialAbility: '적 유닛 처치 시 문화 획득' },
-      ] : civilizations;
-      
-      // 문명을 타입별로 분류
-      defaultCivs.forEach(civ => {
-        const type = civTypeMap[civ.id] || 'expansion';
-        if (!civsByType[type]) civsByType[type] = [];
-        civsByType[type].push(civ);
-      });
-      
-      // 타입 이름
-      const typeNames: Record<string, string> = {
-        'military': '군사',
-        'science': '과학',
-        'culture': '문화',
-        'economic': '경제',
-        'expansion': '확장',
-        'naval': '해상',
-        'religious': '종교',
-        'defensive': '방어'
-      };
-      
       return (
         <div className="w-full max-w-5xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">문명 선택</h2>
-          <div className="space-y-10">
-            {Object.keys(civsByType).map(type => (
-              <div key={type}>
-                <h3 className="text-2xl font-semibold mb-4 pl-2 text-left flex items-center">
-                  {civTypes.find(ct => ct.type === type)?.icon || <Star size={20} className="mr-2" />}
-                  <span className="ml-2">{typeNames[type] || type} 문명</span>
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {civsByType[type].map((civ) => (
-                    <div
-                      key={civ.id}
-                      className={cn(
-                        "border-2 rounded-lg p-6 cursor-pointer transition-all flex flex-col items-start",
-                        selectedCivilization === civ.id
-                          ? "border-blue-500 bg-blue-900 bg-opacity-20"
-                          : "border-gray-700 hover:border-gray-500"
-                      )}
-                      onClick={() => setSelectedCivilization(civ.id)}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={civ.name + ' 선택'}
-                    >
-                      <div className="flex items-center justify-center mb-4 w-full">
-                        <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getCivTypeColor(civ.id)} flex items-center justify-center`}>
-                          {getCivTypeIcon(civ.id)}
-                        </div>
-                      </div>
-                      <h4 className="text-lg font-bold mb-2 text-left w-full">{civ.name}</h4>
-                      <ul className="text-xs text-left w-full space-y-1">
-                        <li><span className="font-semibold">지도자:</span> {civ.leader}</li>
-                        <li><span className="font-semibold">부가 효과:</span> {civ.specialAbility}</li>
-                      </ul>
-                    </div>
-                  ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {civilizations.filter(civ => civ.id === 'korea').map((civ) => (
+              <div
+                key={civ.id}
+                className={cn(
+                  "border-2 rounded-lg p-6 cursor-pointer transition-all flex flex-col items-start",
+                  selectedCivilization === civ.id
+                    ? "border-blue-500 bg-blue-900 bg-opacity-20"
+                    : "border-gray-700 hover:border-gray-500"
+                )}
+                onClick={() => setSelectedCivilization(civ.id)}
+                tabIndex={0}
+                role="button"
+                aria-label={civ.name + ' 선택'}
+              >
+                <div className="flex items-center justify-center mb-4 w-full">
+                  <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getCivTypeColor(civ.id)} flex items-center justify-center`}>
+                    {getCivTypeIcon(civ.id)}
+                  </div>
                 </div>
+                <h4 className="text-lg font-bold mb-2 text-left w-full">{civ.name}</h4>
+                <ul className="text-xs text-left w-full space-y-1">
+                  <li><span className="font-semibold">지도자:</span> {civ.leader}</li>
+                  <li><span className="font-semibold">부가 효과:</span> {civ.specialAbility}</li>
+                </ul>
               </div>
             ))}
           </div>
@@ -730,7 +663,7 @@ const renderInitialChoice = () => {
         <div className="w-full max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-4 text-center">지도 유형 선택</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 justify-items-center w-full">
-            {mapTypes.map((mapType) => (
+            {mapTypes.filter(mapType => mapType.id === 'small_continents').map((mapType) => (
               <button
                 key={mapType.id}
                 type="button"
@@ -760,22 +693,22 @@ const renderInitialChoice = () => {
         <div className="w-full max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold mb-8 text-center">문명 수 선택</h2>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-3 justify-items-center">
-          {civCounts.map((count: number) => (
-            <button
-              key={count}
-              type="button"
-              className={cn(
-                "rounded-full w-14 h-14 flex items-center justify-center text-lg font-bold border-2 transition-all",
-                selectedCivCount === count
-                  ? "bg-blue-600 text-white border-blue-400 scale-110 shadow-lg"
-                  : "bg-slate-800 text-blue-200 border-gray-700 hover:border-blue-400 hover:bg-blue-900"
-              )}
-              onClick={() => setSelectedCivCount(count)}
-              aria-label={`${count}개 문명`}
-            >
-              {count}
-            </button>
-          ))}
+            {[6].map((count: number) => (
+              <button
+                key={count}
+                type="button"
+                className={cn(
+                  "rounded-full w-14 h-14 flex items-center justify-center text-lg font-bold border-2 transition-all",
+                  selectedCivCount === count
+                    ? "bg-blue-600 text-white border-blue-400 scale-110 shadow-lg"
+                    : "bg-slate-800 text-blue-200 border-gray-700 hover:border-blue-400 hover:bg-blue-900"
+                )}
+                onClick={() => setSelectedCivCount(count)}
+                aria-label={`${count}개 문명`}
+              >
+                {count}
+              </button>
+            ))}
           </div>
           <p className="text-center text-gray-400 mt-3 text-sm">5~10개 문명 중 선택 (플레이어+AI 포함)</p>
         </div>

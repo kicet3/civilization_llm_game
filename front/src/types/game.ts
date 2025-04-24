@@ -26,6 +26,12 @@ export interface Civilization {
   color?: string;
   unit?: string;
   building?: string;
+  capital_tile?: {
+    q: number;
+    r: number;
+    s: number;
+  };
+  units?: string[];
 }
 
 // 게임 모드 타입
@@ -58,7 +64,49 @@ export interface GameOptions {
   difficulties: Difficulty[];
   civilizations: Civilization[];
   gameModes: GameMode[];
-  victoryTypes: VictoryType[];
+  victoryTypes?: VictoryType[];
+}
+
+// 자원 수익 타입
+export interface YieldValues {
+  food: number;
+  production: number;
+  gold: number;
+  science: number;
+  culture: number;
+  faith: number;
+}
+
+// 헥스 타일 타입
+export interface HexTile {
+  q: number;
+  r: number;
+  s: number;
+  terrain: string;
+  resource?: string;
+  improvement?: string;
+  naturalWonder?: string;
+  occupant?: string;
+  city_id?: string;
+  unit_id?: string;
+  visible: boolean;
+  explored: boolean;
+  movementCost?: number;
+  yields?: YieldValues;
+  city?: {
+    name: string;
+    owner: string;
+    population: number;
+  };
+  unit?: Unit | null;
+}
+
+// 게임 맵 상태 타입
+export interface GameMapState {
+  tiles: HexTile[];
+  civs: Civilization[];
+  turn: number;
+  game_id: string;
 }
 
 // 게임 상태 타입
@@ -75,8 +123,13 @@ export interface GameState {
     faith: number;
     happiness: number;
   };
+  map?: GameMapState;
   cities: City[];
   units: Unit[];
+  researchState?: ResearchState;
+  policyState?: PolicyState;
+  religionState?: ReligionState;
+  diplomacyState?: DiplomacyState;
 }
 
 // 도시 타입
@@ -99,6 +152,11 @@ export interface City {
   foodToNextPop?: number;
   turnsLeft?: number;
   cultureToNextBorder?: number;
+  location?: {
+    q: number;
+    r: number;
+    s: number;
+  };
 }
 
 // 유닛 타입
@@ -107,13 +165,13 @@ export interface Unit {
   name: string;
   type: string;
   typeName: string;
-  owner: string;
+  owner?: string;
   hp: number;
   maxHp: number;
   movement: number;
   maxMovement: number;
   status: string;
-  hasActed: boolean;
+  hasActed?: boolean;
   location: {
     q: number;
     r: number;
@@ -121,31 +179,48 @@ export interface Unit {
   };
 }
 
-// 헥스 타일 타입
-export interface HexTile {
-  q: number;
-  r: number;
-  s: number;
-  terrain: string;
-  resource?: string;
-  improvement?: string;
-  naturalWonder?: string;
-  visibility: 'unexplored' | 'fogOfWar' | 'visible';
-  movementCost: number;
-  yields: {
-    food: number;
-    production: number;
-    gold: number;
-    science: number;
-    culture: number;
-    faith: number;
-  };
-  city?: {
-    name: string;
-    owner: string;
-    population: number;
-  };
-  unit?: Unit | null;
+// 연구 상태 타입
+export interface ResearchState {
+  science: number;
+  progress: number;
+  currentTechId: string | null;
+  researchedTechIds: string[];
+}
+
+// 정책 상태 타입
+export interface PolicyState {
+  culture: number;
+  adopted: string[];
+  ideology: string | null;
+}
+
+// 종교 상태 타입
+export interface ReligionState {
+  faith: number;
+  foundedReligionId: string | null;
+  followerReligionId: string | null;
+}
+
+// 외교 상태 타입
+export interface DiplomacyState {
+  civRelations: { [civId: string]: string };
+  cityStateRelations: { [csId: string]: number };
+  cityStateAllies: { [csId: string]: boolean };
+}
+
+// 이벤트 타입
+export interface GameEvent {
+  type: 'system' | 'advisor' | 'event' | 'player';
+  content: string;
+  turn: number;
+  importance?: 'low' | 'medium' | 'high';
+}
+
+// 로그 아이템 타입
+export interface LogEntry {
+  type: 'system' | 'advisor' | 'event' | 'player';
+  content: string;
+  turn: number;
 }
 
 // API 응답 타입
@@ -153,4 +228,31 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   message?: string;
+}
+
+// 이동 경로 타입
+export interface MovementPath {
+  path: { q: number, r: number, s: number }[];
+  totalCost: number;
+  possibleInTurn: boolean;
+}
+
+// 게임 초기화 요청 타입
+export interface GameInitRequest {
+  mapType: string;
+  playerName: string;
+  playerCiv: string;
+  difficulty: string;
+  civCount: number;
+  userId?: string;
+}
+
+// 턴 단계 타입
+export type TurnPhase = "player" | "ai" | "resolve";
+
+// 정보 패널 타입
+export interface InfoPanel {
+  open: boolean;
+  type: 'tile' | 'city' | 'unit' | 'research' | 'policy' | null;
+  data: any | null;
 }

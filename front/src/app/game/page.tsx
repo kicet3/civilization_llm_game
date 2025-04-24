@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { 
   Menu, MessageSquare, Settings, Map, Book, 
   Beaker, Users, Sword, Award, ChevronUp, 
-  ChevronDown, User, PanelLeft, Send, 
+  ChevronDown, User, Send, 
   Home 
 } from 'lucide-react';
 import TurnManager, { TurnPhase } from './TurnManager';
@@ -16,7 +16,7 @@ import UnitPanel from "./unit-management/UnitPanel";
 import DiplomacyPanel from "./diplomacy-management/DiplomacyPanel";
 import ReligionPanel from "./religion-management/ReligionPanel";
 import PolicyPanel from "./policy-management/PolicyPanel";
-import ImprovedMapPanel from './map-management/ImprovedMapPanel';
+import HexMap from './map-management/HexMap';
 import Toast from './ui/Toast';
 
 // 서비스 API 가져오기
@@ -53,6 +53,9 @@ export default function GamePage() {
   const playerCiv = searchParams.get('civ') || 'korea';
   const civCount = Number(searchParams.get('civCount')) || 8;
   const gameMode = searchParams.get('mode') || 'medium';
+  
+  // 게임 ID 생성
+  const gameId = searchParams.get('id') || `new_${Date.now()}`;
   
   // 게임 상태
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -355,7 +358,7 @@ export default function GamePage() {
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
         <div className="text-red-400 text-xl mb-4">{error || '게임 상태를 로드할 수 없습니다'}</div>
         <button 
-          onClick={() => router.reload()}
+          onClick={() => router.refresh()}
           className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
         >
           다시 시도
@@ -369,9 +372,10 @@ export default function GamePage() {
     switch (selectedTab) {
       case 'map':
         return (
-          <ImprovedMapPanel 
-            onSelectTile={handleSelectTile}
-            selectedUnit={selectedUnit}
+          <HexMap 
+            gameId={gameId}
+            onTileClick={handleSelectTile}
+            selectedTile={selectedTile}
             onUnitMove={handleUnitMove}
           />
         );
@@ -466,7 +470,7 @@ export default function GamePage() {
         </div>
       </nav>
       
-      <div className="h-full flex-1 flex flex-row">
+      <div className="h-[calc(100vh-3rem)] flex-1 flex flex-row">
         {/* 왼쪽 탭 네비게이션 */}
         <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
           <button
@@ -552,16 +556,16 @@ export default function GamePage() {
         </div>
         
         {/* 메인 콘텐츠 영역 */}
-        <div className="h-[100vh] flex-1 flex flex-col overflow-hidden">
-          <div className="h-[100vh] flex-1 overflow-hidden">
+        <div className="h-full flex-1 flex flex-col overflow-hidden">
+          <div className="h-full flex-1 overflow-hidden">
             {renderTabContent()}
           </div>
           
           {/* 하단 로그 및 명령 영역 */}
-          <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
+          <div className="h-64 bg-slate-800 border-t border-slate-700 flex">
             {/* 로그 영역 */}
-            <div className="flex-1 p-3 flex flex-col-reverse h-full">
-              <div className="space-y-3 h-full max-h-full overflow-y-auto flex flex-col-reverse">
+            <div className="flex-1 p-3 overflow-auto flex flex-col-reverse">
+              <div className="space-y-3">
                 {log.slice().reverse().map((entry: LogEntry, idx: number) => (
                   <div key={idx} className={cn(
                     "p-2 rounded",
