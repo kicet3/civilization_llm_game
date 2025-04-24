@@ -710,7 +710,7 @@ export default function GameModeSelect() {
               </button>
             ))}
           </div>
-          <p className="text-center text-gray-400 mt-3 text-sm">5~10개 문명 중 선택 (플레이어+AI 포함)</p>
+          <p className="text-center text-gray-400 mt-3 text-sm">현재 6개의 문명만 선택 가능 합니다.</p>
         </div>
       );
     default:

@@ -6,13 +6,116 @@ import {
 } from "lucide-react";
 import Toast from "../ui/Toast";
 import gameService from "@/services/gameService";
-
+import { HexTile } from "@/types/game";
 interface HexMapProps {
   gameId: string;
   onTileClick?: (tile: any) => void;
   selectedTile?: any | null;
   onUnitMove?: (unitId: string, to: { q: number, r: number, s: number }) => void;
 }
+
+const getTerrainColor = (terrain: string): string => {
+  switch (terrain) {
+    case 'plains': return '#dda15e';
+    case 'grassland': return '#606c38';
+    case 'desert': return '#e9c46a';
+    case 'mountain': return '#6c757d';
+    case 'hills': return '#bc6c25';
+    case 'forest': return '#283618';
+    case 'ocean': return '#219ebc';
+    case 'coast': return '#8ecae6';
+    case 'tundra': return '#e5e5e5';
+    default: return '#34495e';
+  }
+};
+interface MiniMapProps {
+  mapData: HexTile[];
+  mapOffset: { x: number; y: number };
+  mapScale: number;
+}
+
+const calculateMapBounds = (mapData: HexTile[]) => {
+  const qCoords = mapData.map(hex => hex.q);
+  const rCoords = mapData.map(hex => hex.r);
+
+  return {
+    minQ: Math.min(...qCoords),
+    maxQ: Math.max(...qCoords),
+    minR: Math.min(...rCoords),
+    maxR: Math.max(...rCoords)
+  };
+};
+
+const MiniMap: React.FC<MiniMapProps> = ({ 
+  mapData, 
+  mapOffset, 
+  mapScale, 
+}) => {
+  
+  const miniMapRef = useRef<HTMLCanvasElement>(null);
+  const miniMapSize = 250; // 미니맵 크기
+  const miniMapScale = 0.1; // 미니맵 스케일
+
+  useEffect(() => {
+    
+    const canvas = miniMapRef.current;
+    if (!canvas || mapData.length === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // 캔버스 초기화
+    ctx.clearRect(0, 0, miniMapSize, miniMapSize);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, miniMapSize, miniMapSize);
+
+    // 미니맵에 타일 그리기
+    mapData.forEach(hex => {
+      const x = hex.q * miniMapScale + miniMapSize / 2;
+      const y = hex.r * miniMapScale + miniMapSize / 2;
+
+      // 지형에 따른 색상
+      ctx.fillStyle = getTerrainColor(hex.terrain);
+      ctx.fillRect(x, y, 3, 3);
+    });
+
+    // 현재 보고 있는 영역 표시
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.strokeRect(
+      mapOffset.x * miniMapScale, 
+      mapOffset.y * miniMapScale, 
+      miniMapSize * mapScale, 
+      miniMapSize * mapScale
+    );
+  }, [mapData, mapOffset, mapScale]);
+
+  const handleMiniMapClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = miniMapRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // 클릭 좌표를 헥스 좌표로 변환
+    const q = Math.round((x - miniMapSize / 2) / miniMapScale);
+    const r = Math.round((y - miniMapSize / 2) / miniMapScale);
+
+    onMiniMapClick(q, r);
+  };
+
+  return (
+    <canvas
+      ref={miniMapRef}
+      width={miniMapSize}
+      height={miniMapSize}
+      onClick={handleMiniMapClick}
+      className="absolute bottom-4 right-4 bg-slate-800 bg-opacity-70 rounded-lg cursor-pointer"
+      style={{ zIndex: 10 }}
+    />
+  );
+};
+
 
 export default function HexMap({ 
   gameId, 
@@ -25,11 +128,17 @@ export default function HexMap({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [scale, setScale] = useState(1);
+  
+  const [scale, setScale] = useState(0.2); // 기본값을 0.7로 조정
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredTile, setHoveredTile] = useState<any | null>(null);
-  
+  const [mapBounds, setMapBounds] = useState<{
+    minQ: number;
+    maxQ: number;
+    minR: number;
+    maxR: number;
+  }>({ minQ: 0, maxQ: 0, minR: 0, maxR: 0 });
   // 토스트 메시지
   const [toast, setToast] = useState<{
     message: string;
@@ -46,23 +155,79 @@ export default function HexMap({
   const HEX_HEIGHT = HEX_SIZE * 2;
   const HEX_WIDTH = Math.sqrt(3) / 2 * HEX_HEIGHT;
   const HEX_VERT = HEX_HEIGHT * 0.75;
-
-  // 지형별 색상 함수
-  const getTerrainColor = (terrain: string): string => {
-    switch (terrain) {
-      case 'plains': return '#dda15e';     // 평원
-      case 'grassland': return '#606c38';  // 초원
-      case 'desert': return '#e9c46a';     // 사막
-      case 'mountain': return '#6c757d';   // 산
-      case 'hills': return '#bc6c25';      // 언덕
-      case 'forest': return '#283618';     // 숲
-      case 'ocean': return '#219ebc';      // 대양
-      case 'coast': return '#8ecae6';      // 해안
-      case 'tundra': return '#e5e5e5';     // 툰드라
-      default: return '#34495e';           // 기본
+  useEffect(() => {
+    if (mapData.length > 0) {
+      const bounds = calculateMapBounds(mapData);
+      setMapBounds(bounds);
     }
-  };
+  }, [mapData]);
+  
+  // 키보드 이벤트 핸들러 추가
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    const moveStep = 50; // 이동 거리
+    const scaleStep = 0.1; // 확대/축소 단계
 
+    // 헥스 크기와 현재 스케일을 고려한 픽셀 단위 계산
+    const hexPixelWidth = HEX_WIDTH * scale;
+    const hexPixelHeight = HEX_VERT * scale;
+
+    const containerWidth = containerRef.current?.clientWidth || 0;
+    const containerHeight = containerRef.current?.clientHeight || 0;
+
+    switch (e.key) {
+      case 'ArrowUp': {
+        const maxUpMovement = (mapBounds.minR * hexPixelHeight);
+        setOffset(prev => ({
+          x: prev.x, 
+          y: Math.min(prev.y + moveStep, containerHeight / 2 + Math.abs(maxUpMovement))
+        })); 
+        break;
+      }
+      case 'ArrowDown': {
+        const maxDownMovement = (mapBounds.maxR * hexPixelHeight);
+        setOffset(prev => ({
+          x: prev.x, 
+          y: Math.max(prev.y - moveStep, -(maxDownMovement - containerHeight / 2))
+        })); 
+        break;
+      }
+      case 'ArrowLeft': {
+        const maxLeftMovement = (mapBounds.minQ * hexPixelWidth);
+        setOffset(prev => ({
+          x: Math.min(prev.x + moveStep, containerWidth / 2 + Math.abs(maxLeftMovement)), 
+          y: prev.y
+        })); 
+        break;
+      }
+      case 'ArrowRight': {
+        const maxRightMovement = (mapBounds.maxQ * hexPixelWidth);
+        setOffset(prev => ({
+          x: Math.max(prev.x - moveStep, (maxRightMovement - containerWidth / 2)), 
+          y: prev.y
+        })); 
+        break;
+      }
+      
+      // 확대/축소는 기존과 동일
+      case '+': 
+      case '=': 
+        setScale(prev => Math.min(2, prev + scaleStep)); 
+        break;
+      case '-': 
+      case '_': 
+        setScale(prev => Math.max(0.5, prev - scaleStep)); 
+        break;
+    }
+  }, [mapBounds, scale, containerRef]);
+
+
+// useEffect로 이벤트 리스너 추가
+useEffect(() => {
+  window.addEventListener('keydown', handleKeyDown);
+  return () => {
+    window.removeEventListener('keydown', handleKeyDown);
+  };
+}, [handleKeyDown]);
   // 자원별 색상 함수
   const getResourceColor = (resource: string): string => {
     switch (resource) {
@@ -149,17 +314,41 @@ export default function HexMap({
   };
   
   // 픽셀 좌표를 헥스 좌표로 변환
-  const pixelToHex = (x: number, y: number) => {
-    const adjustedX = (x - offset.x) / scale;
-    const adjustedY = (y - offset.y) / scale;
+  const pixelToHex = (mouseX: number, mouseY: number) => {
+    // 현재 스케일과 오프셋을 고려한 좌표 보정
+    const adjustedX = (mouseX - offset.x) / scale;
+    const adjustedY = (mouseY - offset.y) / scale;
     
-    const q = Math.round(adjustedX / HEX_WIDTH - (Math.round(adjustedY / HEX_VERT) % 2) / 2);
-    const r = Math.round(adjustedY / HEX_VERT);
+    // 육각형 그리드 좌표 계산을 위한 계산식 개선
+    const q = (Math.sqrt(3)/3 * adjustedX - 1/3 * adjustedY) / HEX_SIZE;
+    const r = (2/3 * adjustedY) / HEX_SIZE;
+    
+    // 큐브 좌표계 규칙 적용 (q + r + s = 0)
     const s = -q - r;
+    
+    // 가장 가까운 헥스 좌표로 반올림
+    return hexRound({ q, r, s });
+  };
+  const hexRound = (hex: { q: number, r: number, s: number }) => {
+    let q = Math.round(hex.q);
+    let r = Math.round(hex.r);
+    let s = Math.round(hex.s);
+    
+    const qDiff = Math.abs(q - hex.q);
+    const rDiff = Math.abs(r - hex.r);
+    const sDiff = Math.abs(s - hex.s);
+    
+    // q + r + s = 0 제약 조건 유지
+    if (qDiff > rDiff && qDiff > sDiff) {
+      q = -r - s;
+    } else if (rDiff > sDiff) {
+      r = -q - s;
+    } else {
+      s = -q - r;
+    }
     
     return { q, r, s };
   };
-
   // 맵 렌더링 함수
   const renderMap = (ctx: CanvasRenderingContext2D) => {
     mapData.forEach(hex => {
@@ -376,22 +565,24 @@ export default function HexMap({
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
       setIsDragging(false);
-    } else if (mapData) {
-      // 타일 선택
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      
-      const { q, r, s } = pixelToHex(mouseX, mouseY);
-      const clickedTile = mapData.find(tile => 
-        tile.q === q && tile.r === r && tile.s === s
-      );
-      
-      if (clickedTile && onTileClick) {
-        onTileClick(clickedTile);
-      }
+      return;
+    }
+  
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    const { q, r, s } = pixelToHex(mouseX, mouseY);
+    
+    // 실제 맵 데이터와 정확히 일치하는 타일 찾기
+    const clickedTile = mapData.find(tile => 
+      tile.q === q && tile.r === r && tile.s === s
+    );
+    
+    if (clickedTile && onTileClick) {
+      onTileClick(clickedTile);
     }
   };
   
@@ -474,7 +665,21 @@ export default function HexMap({
       </div>
     );
   }
-
+  const handleMiniMapClick = (q: number, r: number) => {
+    const { x, y } = hexToPixel(q, r);
+    
+    // 캔버스 중앙에 선택된 위치 배치
+    const container = containerRef.current;
+    if (container) {
+      const centerX = container.clientWidth / 2;
+      const centerY = container.clientHeight / 2;
+      
+      setOffset({
+        x: centerX - x,
+        y: centerY - y
+      });
+    }
+  };
   return (
     <div className="relative h-full w-full bg-slate-900" ref={containerRef}>
       {/* 토스트 메시지 */}
@@ -537,6 +742,12 @@ export default function HexMap({
         onMouseUp={handleMouseUp}
         onMouseLeave={() => setIsDragging(false)}
         onWheel={handleWheel}
+      />
+      <MiniMap 
+        mapData={mapData}
+        mapOffset={offset}
+        mapScale={scale}
+        
       />
     </div>
   );
