@@ -14,64 +14,6 @@ export default function Home() {
   const [mapScale, setMapScale] = useState(1);
   const [demoTiles, setDemoTiles] = useState([]);
 
-  const civilizations = [
-    { 
-      id: 'rome', 
-      name: '로마', 
-      specialty: '군사 확장에 특화', 
-      icon: <Sword size={32} />, 
-      color: 'from-red-700 to-red-900' 
-    },
-    { 
-      id: 'china', 
-      name: '중국', 
-      specialty: '과학과 경이 건설에 보너스', 
-      icon: <Brain size={32} />, 
-      color: 'from-yellow-700 to-yellow-900' 
-    },
-    { 
-      id: 'egypt', 
-      name: '이집트', 
-      specialty: '문화와 경이 건설에 특화', 
-      icon: <BookOpen size={32} />, 
-      color: 'from-amber-700 to-amber-900' 
-    },
-    { 
-      id: 'mongol', 
-      name: '몽골', 
-      specialty: '기병 유닛과 정복에 강점', 
-      icon: <Flag size={32} />, 
-      color: 'from-green-700 to-green-900' 
-    },
-    { 
-      id: 'england', 
-      name: '영국', 
-      specialty: '해군과 식민지 확장에 보너스', 
-      icon: <Flag size={32} />, 
-      color: 'from-blue-700 to-blue-900' 
-    },
-    { 
-      id: 'france', 
-      name: '프랑스', 
-      specialty: '문화와 외교에 특화', 
-      icon: <Users size={32} />, 
-      color: 'from-indigo-700 to-indigo-900' 
-    },
-    { 
-      id: 'japan', 
-      name: '일본', 
-      specialty: '군사와 생산에 균형된 능력', 
-      icon: <Sword size={32} />, 
-      color: 'from-rose-700 to-rose-900' 
-    },
-    { 
-      id: 'aztec', 
-      name: '아즈텍', 
-      specialty: '종교와 인적 자원 활용에 특화', 
-      icon: <Award size={32} />, 
-      color: 'from-emerald-700 to-emerald-900' 
-    },
-  ];
 
   const features = [
     "🌍 육각형 타일 기반 세계 탐험",
@@ -80,12 +22,6 @@ export default function Home() {
     "⚔️ 전략적 전투 시스템",
     "🤝 AI 문명과의 외교",
     "✨ LLM 기반 적응형 내러티브"
-  ];
-
-  const gameTypes = [
-    { name: "빠른 게임", turns: "100턴", time: "약 1-2시간" },
-    { name: "일반 게임", turns: "250턴", time: "약 3-5시간" },
-    { name: "장기 게임", turns: "500턴", time: "약 8-12시간" }
   ];
 
   // 데모용 육각형 타일 생성

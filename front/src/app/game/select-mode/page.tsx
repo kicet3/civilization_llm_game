@@ -15,7 +15,7 @@ export default function GameModeSelect() {
   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
   const [selectedCivilization, setSelectedCivilization] = useState<string | null>(null);
   const [selectedMapType, setSelectedMapType] = useState<string | null>(null);
-  const [selectedCivCount, setSelectedCivCount] = useState<number | null>(null);
+  const [selectedCivCount, setSelectedCivCount] = useState<number>(8);
   const [step, setStep] = useState(1);
 
   // 게임 옵션 상태
@@ -519,22 +519,22 @@ export default function GameModeSelect() {
           <div className="w-full max-w-4xl mx-auto">
             <h2 className="text-3xl font-bold mb-8 text-center">문명 수 선택</h2>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3 justify-items-center">
-              {civCounts.map((count: number) => (
-                <button
-                  key={count}
-                  type="button"
-                  className={cn(
-                    "rounded-full w-14 h-14 flex items-center justify-center text-lg font-bold border-2 transition-all",
-                    selectedCivCount === count
-                      ? "bg-blue-600 text-white border-blue-400 scale-110 shadow-lg"
-                      : "bg-slate-800 text-blue-200 border-gray-700 hover:border-blue-400 hover:bg-blue-900"
-                  )}
-                  onClick={() => setSelectedCivCount(count)}
-                  aria-label={`${count}개 문명`}
-                >
-                  {count}
-                </button>
-              ))}
+            {civCounts.map((count: number) => (
+              <button
+                key={count}
+                type="button"
+                className={cn(
+                  "rounded-full w-14 h-14 flex items-center justify-center text-lg font-bold border-2 transition-all",
+                  selectedCivCount === count
+                    ? "bg-blue-600 text-white border-blue-400 scale-110 shadow-lg"
+                    : "bg-slate-800 text-blue-200 border-gray-700 hover:border-blue-400 hover:bg-blue-900"
+                )}
+                onClick={() => setSelectedCivCount(count)}
+                aria-label={`${count}개 문명`}
+              >
+                {count}
+              </button>
+            ))}
             </div>
             <p className="text-center text-gray-400 mt-3 text-sm">5~10개 문명 중 선택 (플레이어+AI 포함)</p>
           </div>
