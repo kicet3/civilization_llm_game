@@ -425,7 +425,7 @@ export default function GamePage() {
       <nav className="bg-slate-800 p-2 flex items-center justify-between border-b border-slate-700">
         <div className="flex items-center">
           <Menu className="mr-2" size={24} />
-          <span className="font-bold text-lg">텍스트 문명</span>
+          <span className="font-bold text-lg">문명</span>
         </div>
         <div className="flex space-x-6">
           <div className="flex items-center">
@@ -434,48 +434,35 @@ export default function GamePage() {
           <div className="flex items-center">
             <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
           </div>
-          <button 
-            onClick={endTurn}
-            disabled={phase !== 'player'}
-            className={cn(
-              "px-4 py-1 rounded font-bold",
-              phase === 'player' 
-                ? "bg-indigo-600 hover:bg-indigo-700" 
-                : "bg-gray-600 cursor-not-allowed"
-            )}
-          >
-            다음 턴
-          </button>
         </div>
         <div className="flex items-center space-x-4">
           {/* 자원 표시 */}
-          <div className="flex items-center space-x-3 text-sm">
+          <div className="flex items-center space-x-4 text-base">
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-green-400 rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-green-400 text-white rounded-full mr-2 text-xs">식량</div>
               <span>{gameState.resources.food}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-red-400 rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-red-400 text-white rounded-full mr-2 text-xs">생산력</div>
               <span>{gameState.resources.production}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-yellow-400 rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-yellow-400 text-white rounded-full mr-2 text-xs">골드</div>
               <span>{gameState.resources.gold}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-blue-400 rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-blue-400 text-white rounded-full mr-2 text-xs">과학</div>
               <span>{gameState.resources.science}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-purple-400 rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-purple-400 text-white rounded-full mr-2 text-xs">문화</div>
               <span>{gameState.resources.culture}</span>
             </div>
             <div className="flex items-center">
-              <div className="w-3 h-3 bg-white rounded-full mr-1"></div>
+              <div className="px-2 py-0.5 bg-gray-200 text-gray-800 rounded-full mr-2 text-xs">신앙</div>
               <span>{gameState.resources.faith}</span>
             </div>
           </div>
-          <Settings size={20} className="cursor-pointer" />
         </div>
       </nav>
       
@@ -565,13 +552,13 @@ export default function GamePage() {
         </div>
         
         {/* 메인 콘텐츠 영역 */}
-        <div className="h-full flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-hidden">
+        <div className="h-[100vh] flex-1 flex flex-col overflow-hidden">
+          <div className="h-[100vh] flex-1 overflow-hidden">
             {renderTabContent()}
           </div>
           
           {/* 하단 로그 및 명령 영역 */}
-          <div className="h-[40vh] bg-slate-800 border-t border-slate-700 flex">
+          <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
             {/* 로그 영역 */}
             <div className="flex-1 p-3 flex flex-col-reverse h-full">
               <div className="space-y-3 h-full max-h-full overflow-y-auto flex flex-col-reverse">

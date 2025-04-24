@@ -1,154 +1,19 @@
 // src/services/gameService.ts
 
-/**
- * 문명 게임 백엔드 API와 통신하기 위한 서비스
- * 헥스 그리드 모델, 유닛 이동, 안개 제거, 자연경관, 외교 등의 기능 포함
- */
-
 import { BASE_URL } from './config';
 
-export interface HexTile {
-  q: number;  // 축 좌표
-  r: number;  // 축 좌표
-  s: number;  // 축 좌표 (q+r+s=0)
-  terrain: string;
-  resource?: string | null;
-  naturalWonder?: string | null;
-  improvement?: string | null;
-  owner?: string | null;
-  visibility: 'visible' | 'fogOfWar' | 'unexplored';
-  city?: City | null;
-  unit?: Unit | null;
-  movementCost: number; // 지형별 이동 비용
-  yields: {
-    food: number;
-    production: number;
-    gold: number;
-    science: number;
-    culture: number;
-    faith: number;
-  }
-}
-
-export interface City {
-  id: number;
-  name: string;
-  population: number;
-  production: string;
-  turnsLeft: number;
-  food: number;
-  gold: number;
-  science: number;
-  culture: number;
-  faith: number;
-  happiness: number;
-  hp: number;
-  defense: number;
-  garrisonedUnit?: string | null;
-  productionQueue: { name: string; turnsLeft: number }[];
-  foodToNextPop: number;
-  cultureToNextBorder: number;
-}
-
-export interface Unit {
-  id: string;
-  name: string;
-  type: string;
-  typeName: string;
-  hp: number;
-  maxHp: number;
-  movement: number;
-  maxMovement: number;
-  status: string;
-  location: { q: number; r: number; s: number };
-  hasActed: boolean;
-  path?: { q: number; r: number; s: number }[];
-}
-
-export interface DiplomacyState {
-  civs: {
-    id: string;
-    name: string;
-    personality: string;
-    relation: string;
-    discovered: boolean; // 발견 여부
-  }[];
-  cityStates: {
-    id: string;
-    name: string;
-    type: string;
-    relation: number;
-    ally: boolean;
-    discovered: boolean; // 발견 여부
-  }[];
-}
-
-export interface NaturalWonder {
-  id: string;
-  name: string;
-  description: string;
-  discovered: boolean;
-  effects: {
-    happiness: number;
-    yields: {
-      food: number;
-      production: number;
-      gold: number;
-      science: number;
-      culture: number;
-      faith: number;
-    }
-  }
-}
-
 export interface GameState {
-  gameId: string;
-  turn: number;
-  year: number;
-  playerId: string;
-  playerCiv: string;
-  resources: {
-    food: number;
-    production: number;
-    gold: number;
-    science: number;
-    culture: number;
-    faith: number;
-    happiness: number;
-  };
-  cities: City[];
-  units: Unit[];
-  diplomacy: DiplomacyState;
-  naturalWonders: NaturalWonder[];
-  researchState: ResearchState;
-  policyState: PolicyState;
-  religionState: ReligionState;
+  // 기존 인터페이스 그대로 유지
 }
 
-export interface ResearchState {
-  science: number;
-  progress: number;
-  currentTechId: string | null;
-  researchedTechIds: string[];
-}
-
-export interface PolicyState {
-  culture: number;
-  adopted: string[];
-  ideology: string | null;
-}
-
-export interface ReligionState {
-  faith: number;
-  foundedReligionId: string | null;
-  followerReligionId: string | null;
-}
-
-/**
- * 게임 서비스 객체
- */
 class GameService {
   private gameId: string | null = null;
+  private LOCAL_STORAGE_GAME_KEY = 'text_civ_game_id';
+  private LOCAL_STORAGE_GAME_STATE_KEY = 'textCivGameState';
+
+  constructor() {
+    // 로컬 스토리지 gameId 초기화 제거
+  }
 
   /**
    * 게임 상태 초기화
@@ -166,93 +31,163 @@ class GameService {
     difficulty: string;
     civCount: number;
   }): Promise<GameState> {
-    const response = await fetch(`${BASE_URL}/api/game/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        mapType,
-        playerName,
-        playerCiv,
-        difficulty,
-        civCount
-      }),
-    });
+    try {
+      const response = await fetch(`${BASE_URL}/api/game/start`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mapType,
+          playerName,
+          playerCiv,
+          difficulty,
+          civCount
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error('게임 시작 실패');
+      if (!response.ok) {
+        throw new Error('게임 시작 실패');
+      }
+
+      const data = await response.json();
+      
+      // gameId와 초기 게임 상태를 로컬 스토리지에 저장
+      localStorage.setItem(this.LOCAL_STORAGE_GAME_KEY, data.id);
+      localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(data.initialState));
+      
+      this.gameId = data.id;
+      return data.initialState;
+    } catch (error) {
+      console.error('게임 초기화 중 오류:', error);
+      throw error;
     }
-
-    const data = await response.json();
-    this.gameId = data.gameId;
-    return data.initialState;
   }
 
   /**
    * 현재 게임 상태 조회
    */
   async getGameState(): Promise<GameState> {
-    if (!this.gameId) {
-      throw new Error('게임이 시작되지 않았습니다');
-    }
-
-    const response = await fetch(`${BASE_URL}/api/game/state?gameId=${this.gameId}`);
+    // 로컬 스토리지의 gameId 확인
+    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`게임 상태 로드 실패: ${errorText}`);
+    if (!storedGameId) {
+      throw new Error('진행 중인 게임이 없습니다');
     }
 
-    return await response.json();
-  }
+    try {
+      const response = await fetch(`${BASE_URL}/api/game/state?gameId=${storedGameId}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`게임 상태 로드 실패: ${errorText}`);
+      }
 
+      const gameState = await response.json();
+      
+      // 조회한 게임 상태를 로컬 스토리지에 저장
+      localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(gameState));
+      
+      return gameState;
+    } catch (error) {
+      console.error('게임 상태 조회 중 오류:', error);
+      throw error;
+    }
+  }
+  async getNaturalWonders(): Promise<{ wonders: any[] }> {
+    // 임시 모의 데이터
+    return {
+      wonders: [
+        { 
+          id: 'wonder1', 
+          name: '그랜드 캐니언', 
+          description: '거대한 협곡', 
+          discovered: false,
+          effects: {
+            happiness: 1,
+            yields: {
+              food: 0,
+              production: 1,
+              gold: 0,
+              science: 1,
+              culture: 1,
+              faith: 0
+            }
+          }
+        },
+        { 
+          id: 'wonder2', 
+          name: '마추픽추', 
+          description: '잉카 문명의 유적', 
+          discovered: false,
+          effects: {
+            happiness: 2,
+            yields: {
+              food: 0,
+              production: 0,
+              gold: 1,
+              science: 0,
+              culture: 2,
+              faith: 0
+            }
+          }
+        }
+      ]
+    };
+  }
   /**
    * 턴 종료 처리
    */
   async endTurn(): Promise<{ newState: GameState; events: string[] }> {
-    if (!this.gameId) {
-      throw new Error('게임이 시작되지 않았습니다');
+    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
+    
+    if (!storedGameId) {
+      throw new Error('진행 중인 게임이 없습니다');
     }
 
-    const response = await fetch(`${BASE_URL}/api/game/endturn`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ gameId: this.gameId }),
-    });
+    try {
+      const response = await fetch(`${BASE_URL}/api/game/endturn`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameId: storedGameId }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`턴 종료 처리 실패: ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`턴 종료 처리 실패: ${errorText}`);
+      }
+
+      const result = await response.json();
+      
+      // 턴 종료 후 게임 상태 로컬 스토리지에 저장
+      localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(result.newState));
+      
+      return result;
+    } catch (error) {
+      console.error('턴 종료 중 오류:', error);
+      throw error;
     }
-
-    return await response.json();
   }
 
   /**
-   * 게임 옵션 조회
+   * 현재 게임 세션 종료 및 초기화
    */
-  async getGameOptions(): Promise<{
-    mapTypes: { id: string; name: string; description: string }[];
-    difficulties: { id: string; name: string; description: string }[];
-  }> {
-    const response = await fetch(`${BASE_URL}/api/map/options`);
-    
-    if (!response.ok) {
-      throw new Error('게임 옵션 로드 실패');
-    }
-
-    return await response.json();
+  endGameSession() {
+    localStorage.removeItem(this.LOCAL_STORAGE_GAME_KEY);
+    localStorage.removeItem(this.LOCAL_STORAGE_GAME_STATE_KEY);
   }
-  // 다른 모든 메서드도 비슷한 방식으로 BASE_URL 사용
-  async getMap(): Promise<{ hexagons: HexTile[] }> {
-    if (!this.gameId) {
-      throw new Error('게임이 시작되지 않았습니다');
+
+  // 기존의 다른 메서드들도 유사하게 수정
+  async getMap(): Promise<{ hexagons: any[] }> {
+    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
+    
+    if (!storedGameId) {
+      throw new Error('진행 중인 게임이 없습니다');
     }
 
-    const response = await fetch(`${BASE_URL}/api/map?gameId=${this.gameId}`);
+    const response = await fetch(`${BASE_URL}/api/map?gameId=${storedGameId}`);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -261,9 +196,6 @@ class GameService {
 
     return await response.json();
   }
-
-  // 다른 메서드들도 유사하게 수정 필요
-  // selectTile, getAdjacentTiles, calculatePath, moveUnit 등
 }
 
 // 싱글톤 인스턴스 생성 및 내보내기

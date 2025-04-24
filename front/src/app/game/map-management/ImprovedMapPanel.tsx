@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { 
   ZoomIn, ZoomOut, Compass, Home, RotateCcw,
   RefreshCw, Eye, Trees, Mountain,
-  Star, Flag, Tent, Shield, Droplet
+  Star, Flag, Tent, Shield, Droplet, MoveRight, MoveLeft, MoveUp, MoveDown
 } from "lucide-react";
 import Toast from "../ui/Toast";
 
@@ -597,14 +597,6 @@ export default function ImprovedMapPanel({
     setMapScale(newScale);
   };
   
-  // 토스트 메시지 표시
-  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
-    setToast({ message, show: true, type });
-    setTimeout(() => {
-      setToast({ message: '', show: false });
-    }, 3000);
-  };
-
   // 유닛 이동 경로 계산
   const calculateMovementPath = async (unit: Unit, targetTile: HexTile) => {
     try {
@@ -653,7 +645,61 @@ export default function ImprovedMapPanel({
       showToast(err instanceof Error ? err.message : '유닛 이동 실패', 'error');
     }
   };
-  
+
+  // 선택 초기화 함수
+  const handleResetSelection = () => {
+    setSelectedTile(null);
+    setMovementPath([]);
+    setPathCost(0);
+    setCanCompletePath(false);
+  };
+
+  // 키보드 이벤트 핸들러
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    switch (e.key) {
+      // 맵 이동
+      case 'ArrowUp': setMapOffset(prev => ({ x: prev.x, y: prev.y + 50 })); break;
+      case 'ArrowDown': setMapOffset(prev => ({ x: prev.x, y: prev.y - 50 })); break;
+      case 'ArrowLeft': setMapOffset(prev => ({ x: prev.x + 50, y: prev.y })); break;
+      case 'ArrowRight': setMapOffset(prev => ({ x: prev.x - 50, y: prev.y })); break;
+      // 확대/축소
+      case '+': case '=': setMapScale(prev => Math.min(2, prev + 0.1)); break;
+      case '-': case '_': setMapScale(prev => Math.max(0.5, prev - 0.1)); break;
+      // 이동 실행 및 초기화
+      case 'Enter':
+        if (selectedTile && selectedUnit && movementPath.length && canCompletePath) {
+          executeMovement(selectedUnit, selectedTile);
+        }
+        break;
+      case 'Escape':
+        handleResetSelection();
+        break;
+      // 유닛 이동 경로 설정
+      case 'w': case 's': case 'a': case 'd': {
+        if (selectedUnit && selectedTile) {
+          calculateMovementPath(selectedUnit, {
+            q: selectedTile.q + (['w','d'].includes(e.key) ? 1 : ['s','a'].includes(e.key) ? -1 : 0),
+            r: selectedTile.r + (e.key === 's' ? 1 : e.key === 'w' ? -1 : 0),
+            s: 0
+          });
+        }
+      } break;
+    }
+  }, [selectedTile, selectedUnit, movementPath, canCompletePath, mapData, executeMovement, calculateMovementPath, handleResetSelection]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // 토스트 메시지 표시
+  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+    setToast({ message, show: true, type });
+    setTimeout(() => {
+      setToast({ message: '', show: false });
+    }, 3000);
+  };
+
   // 맵 확대/축소
   const handleZoomIn = () => {
     const newScale = Math.min(2, mapScale + 0.1);
@@ -688,13 +734,6 @@ export default function ImprovedMapPanel({
     });
   };
   
-  // 현재 선택 리셋
-  const handleResetSelection = () => {
-    setSelectedTile(null);
-    setMovementPath([]);
-    setPathCost(0);
-    setCanCompletePath(false);
-  };
   
   // 맵 새로고침 (서버에서 새로운 데이터 가져오기)
   const handleRefreshMap = async () => {
@@ -743,7 +782,7 @@ export default function ImprovedMapPanel({
   }
 
   return (
-    <div className="relative h-full w-full bg-slate-900" ref={containerRef}>
+    <div className="relative h-[100%] w-full bg-slate-900" ref={containerRef} tabIndex={0}>
       {/* 토스트 메시지 */}
       <Toast 
         message={toast.message} 
@@ -766,36 +805,6 @@ export default function ImprovedMapPanel({
           title="축소"
         >
           <ZoomOut size={20} />
-        </button>
-        <button 
-          onClick={handleCenterMap}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="맵 중앙으로"
-        >
-          <Home size={20} />
-        </button>
-        {selectedTile && (
-          <button 
-            onClick={() => handleCenterOnTile(selectedTile)}
-            className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-            title="선택한 타일로 이동"
-          >
-            <Compass size={20} />
-          </button>
-        )}
-        <button 
-          onClick={handleResetSelection}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="선택 초기화"
-        >
-          <RotateCcw size={20} />
-        </button>
-        <button 
-          onClick={handleRefreshMap}
-          className="p-2 bg-slate-700 rounded hover:bg-slate-600"
-          title="맵 새로고침"
-        >
-          <RefreshCw size={20} />
         </button>
       </div>
       
@@ -934,10 +943,7 @@ export default function ImprovedMapPanel({
       {/* 맵 캔버스 */}
       <canvas
         ref={canvasRef}
-        className={cn(
-          "cursor-grab touch-none",
-          isDragging && "cursor-grabbing"
-        )}
+        className={cn("h-[100%] w-[100%] cursor-grab touch-none outline-none", isDragging && "cursor-grabbing")}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

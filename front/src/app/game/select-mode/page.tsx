@@ -68,12 +68,16 @@ export default function GameModeSelect() {
     } else {
       // 게임 시작 페이지로 이동 (선택값 전달)
       const params: Record<string, string> = {};
-      if (selectedMode) params.mode = encodeURIComponent(selectedMode);
-      if (selectedDifficulty) params.difficulty = encodeURIComponent(selectedDifficulty);
-      if (selectedCivilization) params.civ = encodeURIComponent(selectedCivilization);
-      if (selectedMapType) params.map = encodeURIComponent(selectedMapType);
-      if (selectedCivCount) params.civCount = encodeURIComponent(String(selectedCivCount));
-      const paramString = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+      if (selectedMode) params.mode = selectedMode;
+      if (selectedDifficulty) params.difficulty = selectedDifficulty;
+      if (selectedCivilization) params.civ = selectedCivilization;
+      if (selectedMapType) params.map = selectedMapType;
+      if (selectedCivCount) params.civCount = String(selectedCivCount);
+
+      const paramString = Object.entries(params)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+
       router.push(`/game${paramString ? `?${paramString}` : ''}`);
     }
   };
