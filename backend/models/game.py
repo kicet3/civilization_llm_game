@@ -72,3 +72,18 @@ class GameSessionCreate(BaseModel):
     gameSpeed: str = "normal"  # 추후 enum으로 변경 가능
     playerCiv: str  # 선택한 문명 
     civCount: int = Field(default=8, ge=5, le=10)  # 문명 수 제한
+
+
+
+class GameOptions(BaseModel):
+    mapTypes: List[MapType]
+    difficulties: List[Difficulty]
+    civilizations: List[dict]
+    gameModes: List[dict]
+    civTypeMap: dict
+
+class GameOptionsResponse(BaseModel):
+    success: bool
+    data: GameOptions
+    error: Optional[dict] = None
+    

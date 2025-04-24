@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 from typing import List, Dict, Any, Set, Tuple
 from prisma.models import GameSession, Player, Hexagon, City, Unit, UnitType, Terrain, Resource
-from models.game import GameSessionCreate, GameSessionResponse, GameState
+from models.game import GameSessionCreate, GameSessionResponse, GameState, GameOptions, GameOptionsResponse
 from models.map import MapType, Difficulty
 from core.config import prisma_client, settings
 
@@ -718,4 +718,56 @@ async def create_game_session(request: GameSessionCreate):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail=f"게임 세션 생성 중 오류 발생: {str(e)}"
+        )
+
+
+@router.get("/options", response_model=GameOptionsResponse)
+async def get_game_options():
+    """게임 옵션 목록 반환"""
+    try:
+        map_types = await prisma_client.map_type.find_many()
+        difficulties = await prisma_client.difficulty.find_many()
+        civilizations = await prisma_client.civilization.find_many()
+        game_modes = await prisma_client.game_mode.find_many()
+        civ_type_map = { civ.id: civ.name for civ in civilizations }
+        
+        return GameOptionsResponse(
+            success=True,
+            data=GameOptions(
+                mapTypes=[
+                    {
+                        "id": map_type.id,
+                        "name": map_type.name,
+                        "description": map_type.description
+                    } for map_type in map_types
+                ],
+                difficulties=[
+                    {
+                        "id": difficulty.id,
+                        "name": difficulty.name,
+                        "description": difficulty.description
+                    } for difficulty in difficulties
+                ],
+                civilizations=[
+                    {
+                        "id": civilization.id,
+                        "name": civilization.name,
+                        "description": civilization.description
+                    } for civilization in civilizations
+                ],
+                gameModes=[
+                    {
+                        "id": game_mode.id,
+                        "name": game_mode.name,
+                        "description": game_mode.description
+                    } for game_mode in game_modes
+                ],
+                civTypeMap=civ_type_map
+            )
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"게임 옵션 조회 중 오류 발생: {str(e)}"
         )

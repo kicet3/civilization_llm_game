@@ -24,50 +24,6 @@ model User {
   players       Player[]
 }
 
-model GameSession {
-  id              String        @id @default(uuid()) @db.Char(36)
-  host_user_id    Int
-  host_user       User          @relation("HostedGames", fields: [host_user_id], references: [id])
-  map_type        String        @db.Text
-  seed            BigInt
-  current_turn    Int           @default(1)
-  current_player  Int
-  status          String        @default("ongoing") @db.VarChar(20)
-  created_at      DateTime
-  updated_at      DateTime      @updatedAt
-  
-  players         Player[]
-  hexagons        Hexagon[]
-  cities          City[]
-  units           Unit[]
-  game_research   GameResearch?
-  game_policies   GamePolicies?
-  game_religion   GameReligion?
-  game_events     GameEvent[]
-  civ_relations   CivRelation[]
-  city_state_relations CityStateRelation[]
-}
-
-// 2. 플레이어 정보 모델
-model Player {
-  id            Int         @id @default(autoincrement())
-  session_id    String      @db.Char(36)
-  user_id       Int
-  civ_type      String      @db.VarChar(50)
-  is_ai         Boolean     @default(false) @db.TinyInt
-  player_index  Int
-  
-  game_session  GameSession @relation(fields: [session_id], references: [id])
-  user          User        @relation(fields: [user_id], references: [id])
-  cities        City[]
-  units         Unit[]
-  
-  source_relations      CivRelation[] @relation("SourcePlayer")
-  target_relations      CivRelation[] @relation("TargetPlayer")
-  city_state_relations  CityStateRelation[]
-  
-  @@unique([session_id, player_index], name: "ux_player_order")
-}
 
 // 3. 메타데이터 모델
 model Tech {
@@ -329,4 +285,105 @@ model GameEvent {
   created_at    DateTime      @default(now())
   
   game_session  GameSession   @relation(fields: [session_id], references: [id])
+}
+
+
+// 아래 내용을 기존 schema.prisma 파일에 추가하세요
+
+// 게임 모드 테이블
+model GameMode {
+  id            String    @id @db.VarChar(50)
+  name          String    @db.VarChar(100)
+  turns         Int
+  estimatedTime String    @db.VarChar(50)
+  description   String?   @db.Text
+  
+  game_sessions GameSession[] // 게임 세션과의 관계
+}
+
+// 난이도 테이블
+model Difficulty {
+  id             String    @id @db.VarChar(50)
+  name           String    @db.VarChar(100)
+  description    String?   @db.Text
+  aiBonus        String?   @db.VarChar(100)
+  playerPenalty  String?   @db.VarChar(100)
+  
+  game_sessions GameSession[] // 게임 세션과의 관계
+}
+
+// 문명 테이블
+model Civilization {
+  id              String    @id @db.VarChar(50)
+  name            String    @db.VarChar(100)
+  leader          String    @db.VarChar(100)
+  specialAbility  String?   @db.Text
+  specialUnit     String?   @db.VarChar(100)
+  specialBuilding String?   @db.VarChar(100)
+  playStyle       String?   @db.VarChar(100)
+  
+  players Player[] // 플레이어와의 관계
+}
+
+// 지도 유형 테이블
+model MapType {
+  id           String    @id @db.VarChar(50)
+  name         String    @db.VarChar(100)
+  description  String?   @db.Text
+  features     String?   @db.Text
+  
+  game_sessions GameSession[] // 게임 세션과의 관계
+}
+
+// 기존 GameSession 모델 수정
+model GameSession {
+  id              String        @id @default(uuid()) @db.Char(36)
+  host_user_id    Int
+  host_user       User          @relation("HostedGames", fields: [host_user_id], references: [id])
+  map_type_id     String        @db.VarChar(50) // 추가된 필드
+  map_type        MapType       @relation(fields: [map_type_id], references: [id]) // 추가된 관계
+  game_mode_id    String        @db.VarChar(50) // 추가된 필드
+  game_mode       GameMode      @relation(fields: [game_mode_id], references: [id]) // 추가된 관계
+  difficulty_id   String        @db.VarChar(50) // 추가된 필드
+  difficulty      Difficulty    @relation(fields: [difficulty_id], references: [id]) // 추가된 관계
+  civ_count       Int           @default(6) // 추가된 필드 - 문명 수
+  seed            BigInt
+  current_turn    Int           @default(1)
+  current_player  Int
+  status          String        @default("ongoing") @db.VarChar(20)
+  created_at      DateTime
+  updated_at      DateTime      @updatedAt
+  
+  players         Player[]
+  hexagons        Hexagon[]
+  cities          City[]
+  units           Unit[]
+  game_research   GameResearch?
+  game_policies   GamePolicies?
+  game_religion   GameReligion?
+  game_events     GameEvent[]
+  civ_relations   CivRelation[]
+  city_state_relations CityStateRelation[]
+}
+
+// 기존 Player 모델 수정
+model Player {
+  id            Int           @id @default(autoincrement())
+  session_id    String        @db.Char(36)
+  user_id       Int
+  civ_id        String        @db.VarChar(50) // 변경된 필드 (civ_type -> civ_id)
+  civilization  Civilization  @relation(fields: [civ_id], references: [id]) // 추가된 관계
+  is_ai         Boolean       @default(false) @db.TinyInt
+  player_index  Int
+  
+  game_session  GameSession   @relation(fields: [session_id], references: [id])
+  user          User          @relation(fields: [user_id], references: [id])
+  cities        City[]
+  units         Unit[]
+  
+  source_relations      CivRelation[] @relation("SourcePlayer")
+  target_relations      CivRelation[] @relation("TargetPlayer")
+  city_state_relations  CityStateRelation[]
+  
+  @@unique([session_id, player_index], name: "ux_player_order")
 }
