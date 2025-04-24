@@ -363,62 +363,47 @@ export default function GameModeSelect() {
   };
 
   // 초기 선택 화면 렌더링
-  const renderInitialChoice = () => {
-    return (
-      <div className="w-full max-w-4xl mx-auto">
-        <h2 className="text-3xl font-bold mb-8 text-center">게임 선택</h2>
-        
-        {optionsError && (
-          <div className="mb-8 p-4 bg-red-900 bg-opacity-30 border border-red-500 rounded-md text-center text-red-300 flex items-center justify-center">
-            <XCircle size={20} className="mr-2" />
-            {optionsError}
-            <button 
-              onClick={() => window.location.reload()} 
-              className="ml-4 underline text-blue-300 hover:text-blue-200"
-            >
-              다시 시도
-            </button>
-          </div>
-        )}
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* 새 게임 시작 */}
-          <div 
-            className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
-            onClick={handleStartNewGame}
-          >
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
-                <PlayCircle size={32} />
-              </div>
+const renderInitialChoice = () => {
+  return (
+    <div className="w-full max-w-4xl mx-auto">
+      <h2 className="text-3xl font-bold mb-8 text-center">게임 선택</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* 새 게임 시작 */}
+        <div 
+          className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
+          onClick={handleStartNewGame}
+        >
+          <div className="flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-indigo-800 flex items-center justify-center">
+              <PlayCircle size={32} />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-center">새 게임 시작</h3>
-            <p className="text-gray-400 text-center">
-              새로운 문명의 역사를 시작하세요.<br />
-              게임 모드, 난이도, 문명을 선택할 수 있습니다.
-            </p>
           </div>
+          <h3 className="text-xl font-bold mb-3 text-center">모드 선택하기</h3>
+          <p className="text-gray-400 text-center">
+            새로운 문명의 역사를 시작하세요.<br />
+            게임 모드, 난이도, 문명을 선택할 수 있습니다.
+          </p>
+        </div>
 
-          {/* 게임 불러오기 */}
-          <div 
-            className="border-2 border-gray-700 rounded-xl p-6 cursor-pointer transition-all hover:border-blue-500 hover:shadow-lg bg-slate-800 hover:bg-opacity-80"
-            onClick={handleShowLoadGame}
-          >
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center">
-                <Save size={32} />
-              </div>
+        {/* 게임 불러오기 */}
+        <div 
+          className="border-2 border-gray-700 rounded-xl p-6 bg-slate-900 opacity-50 cursor-not-allowed"
+        >
+          <div className="flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-600 to-gray-800 flex items-center justify-center opacity-50">
+              <Save size={32} className="text-gray-500" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-center">게임 불러오기</h3>
-            <p className="text-gray-400 text-center">
-              이전에 저장한 게임을 불러옵니다.<br />
-              사용자 이름과 비밀번호가 필요합니다.
-            </p>
           </div>
+          <h3 className="text-xl font-bold mb-3 text-center text-gray-500">게임 불러오기 (곧 지원 예정)</h3>
+          <p className="text-gray-600 text-center">
+            개발 중인 기능입니다.<br />
+            앞으로 출시될 예정입니다.
+          </p>
         </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
 
   // 게임 불러오기 화면 렌더링
   const renderLoadGame = () => {
