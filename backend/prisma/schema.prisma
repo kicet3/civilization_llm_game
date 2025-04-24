@@ -76,6 +76,25 @@ model Terrain {
   hexagons      Hexagon[]
 }
 
+model MapSeed {
+  id            String    @id @default(uuid()) @db.Char(36)
+  gameMode      String    @db.VarChar(50)
+  difficulty    String    @db.VarChar(50)
+  civilization  String    @db.VarChar(50)
+  mapType       String    @db.VarChar(50)
+  civCount      Int       @default(6)
+  seed          BigInt
+  
+  // 시드 생성 시간
+  created_at    DateTime  @default(now())
+  
+  // 선택적으로 게임 세션과 연결 가능
+  game_session  GameSession? @relation(fields: [game_session_id], references: [id])
+  game_session_id String?    @unique @db.Char(36)
+  
+  // 유니크 제약 조건 추가 (필요에 따라 조정 가능)
+  @@unique([gameMode, difficulty, civilization, mapType, civCount], name: "ux_map_seed_config")
+}
 model Resource {
   id            String      @id @db.VarChar(50)
   name          String      @db.VarChar(100)
@@ -364,6 +383,8 @@ model GameSession {
   game_events     GameEvent[]
   civ_relations   CivRelation[]
   city_state_relations CityStateRelation[]
+  
+  map_seed      MapSeed?
 }
 
 // 기존 Player 모델 수정

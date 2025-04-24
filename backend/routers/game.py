@@ -9,12 +9,26 @@ from prisma.models import GameSession, Player, Hexagon, City, Unit, UnitType, Te
 from models.game import GameSessionCreate, GameSessionResponse, GameState, GameOptions, GameOptionsResponse
 from models.map import MapType, Difficulty
 from core.config import prisma_client, settings
+import json
 
 router = APIRouter()
 
 # 헥스 좌표 저장을 위한 튜플 타입
 HexCoord = Tuple[int, int, int]
+import hashlib
 
+def generate_deterministic_seed(mode, difficulty, civ, map_type, civ_count):
+
+    # 모든 입력 파라미터를 문자열로 결합
+    seed_input = f"{mode}_{difficulty}_{civ}_{map_type}_{civ_count}"
+    
+    # SHA-256 해시를 사용하여 고유한 정수 시드 생성
+    hash_object = hashlib.sha256(seed_input.encode())
+    
+    # 해시의 처음 8바이트를 사용하여 큰 정수 생성
+    seed_int = int.from_bytes(hash_object.digest()[:8], byteorder='big')
+    
+    return seed_int
 
 
 async def create_initial_city(game_session_id: str, player_id: int, start_hex: Hexagon, civ: str):
@@ -78,127 +92,148 @@ async def create_initial_city(game_session_id: str, player_id: int, start_hex: H
     
     return city
 
+
 async def generate_map(game_session_id: str, map_type: MapType, width: int, height: int, seed: int):
-    """맵 생성 함수"""
+    """고도화된 맵 생성 함수 - 실제 DB 데이터 기반"""
     random.seed(seed)
     
-    # 지형 타입 목록 (실제 게임에서는 더 복잡한 로직 필요)
-    terrain_types = [
-        "plains", "grassland", "desert", "hills", "forest", "tundra", 
-        "mountain", "ocean", "coast", "lake"
-    ]
+    # DB에서 지형 및 자원 정보 사전 로드
+    terrains = await prisma_client.terrain.find_many()
+    resources = await prisma_client.resource.find_many()
     
-    # 자원 타입 목록
-    resource_types = [
-        "wheat", "cattle", "horses", "iron", "gold", "silver", 
-        "stone", "deer", "fish", "coal", "oil"
+    # 지형별 자원 매핑 (지형 특성에 맞는 자원 타입)
+    terrain_resource_mapping = {
+        'Grassland': ['Wheat', 'Cattle', 'Sheep'],
+        'Plains': ['Wheat', 'Horses', 'Cattle'],
+        'Forest': ['Deer', 'Dyes', 'Ivory'],
+        'Hill': ['Iron', 'Horses', 'Gold'],
+        'Tundra': ['Deer'],
+        'Desert': ['Salt'],
+        'Jungle': ['Spices', 'Dyes', 'Incense'],
+        'Coast': ['Fish', 'Whale'],
+        'Mountain': ['Silver', 'Gems'],
+        'Oasis': ['Gems']
+    }
+    
+    # 맵 타입별 지형 분포 및 특징
+    map_type_terrain_distribution = {
+        MapType.CONTINENTS: {
+            "primary_terrains": ["Grassland", "Plains", "Forest"],
+            "secondary_terrains": ["Hill", "Tundra", "Coast"],
+            "water_terrains": ["Ocean"],
+            "continent_count": 2,
+            "continent_size_variance": 0.3
+        },
+        MapType.PANGAEA: {
+            "primary_terrains": ["Plains", "Grassland", "Jungle"],
+            "secondary_terrains": ["Hill", "Forest", "Tundra"],
+            "water_terrains": ["Ocean", "Coast"],
+            "continent_count": 1,
+            "continent_size_variance": 0.1
+        },
+        MapType.ARCHIPELAGO: {
+            "primary_terrains": ["Coast"],
+            "secondary_terrains": ["Plains", "Hill"],
+            "water_terrains": ["Ocean"],
+            "continent_count": 10,
+            "continent_size_variance": 0.8
+        },
+        MapType.SMALL_CONTINENTS: {
+            "primary_terrains": ["Grassland", "Plains"],
+            "secondary_terrains": ["Forest", "Hill", "Coast"],
+            "water_terrains": ["Ocean"],
+            "continent_count": 4,
+            "continent_size_variance": 0.5
+        }
+    }
+    
+    # 기본 설정으로 fallback
+    current_distribution = map_type_terrain_distribution.get(
+        map_type, 
+        map_type_terrain_distribution[MapType.CONTINENTS]
+    )
+    
+    # 대륙 생성 알고리즘
+    def generate_continent_seed(width, height):
+        """대륙의 중심점 생성"""
+        return (
+            random.randint(width // 4, width * 3 // 4),
+            random.randint(height // 4, height * 3 // 4)
+        )
+    
+    # 대륙 중심점들 생성
+    continent_seeds = [
+        generate_continent_seed(width, height) 
+        for _ in range(current_distribution["continent_count"])
     ]
     
     hexagons = []
     
-    # 맵 타입에 따른 기본 지형 생성 로직 
-    if map_type == MapType.CONTINENTS:
-        # 대륙 맵 생성 로직 (간단한 예시)
-        for q in range(width):
-            for r in range(height):
-                s = -q - r
-                
-                # 간단한 대륙 생성 알고리즘
-                terrain = random.choices(
-                    terrain_types, 
-                    weights=[0.3, 0.2, 0.1, 0.1, 0.1, 0.05, 0.05, 0.05, 0.025, 0.025]
-                )[0]
-                
-                # 랜덤 자원 배치 (확률 기반)
-                resource = random.choices(
-                    [None] + resource_types, 
-                    weights=[0.7] + [0.03] * len(resource_types)
-                )[0]
-                
-                hexagon = await prisma_client.hexagon.create(
-                    data={
-                        "session_id": game_session_id,
-                        "q": q,
-                        "r": r,
-                        "s": s,
-                        "terrain_id": terrain,
-                        "resource_id": resource
-                    }
-                )
-                hexagons.append(hexagon)
-    elif map_type == MapType.PANGAEA:
-        # 판게아 맵 생성 로직 (하나의 큰 대륙)
-        for q in range(width):
-            for r in range(height):
-                s = -q - r
-                
-                # 중앙에서의 거리 계산 (0~1 범위로 정규화)
-                center_q, center_r = width // 2, height // 2
-                distance_from_center = math.sqrt((q - center_q)**2 + (r - center_r)**2)
-                max_distance = math.sqrt((width)**2 + (height)**2) / 2
-                normalized_distance = distance_from_center / max_distance
-                
-                # 거리에 따라 지형 확률 조정 (중앙은 육지, 외곽은 바다)
-                if normalized_distance < 0.6:  # 내륙
-                    terrain = random.choices(
-                        ["plains", "grassland", "hills", "forest", "desert"],
-                        weights=[0.3, 0.3, 0.15, 0.15, 0.1]
-                    )[0]
-                elif normalized_distance < 0.8:  # 해안 지역
-                    terrain = random.choices(
-                        ["plains", "grassland", "hills", "desert", "coast"],
-                        weights=[0.2, 0.2, 0.1, 0.1, 0.4]
-                    )[0]
-                else:  # 바다
-                    terrain = random.choices(
-                        ["coast", "ocean"],
-                        weights=[0.3, 0.7]
-                    )[0]
-                
-                # 지형에 따른 자원 배치
-                if terrain in ["plains", "grassland"]:
-                    resource_weights = [0.7, 0.08, 0.08, 0.02, 0.03, 0.03, 0.02, 0.04, 0, 0, 0]
-                elif terrain in ["hills", "desert"]:
-                    resource_weights = [0.7, 0.03, 0.03, 0.07, 0.06, 0.06, 0.05, 0, 0, 0, 0]
-                elif terrain in ["coast", "ocean"]:
-                    resource_weights = [0.7, 0, 0, 0, 0, 0, 0, 0, 0.2, 0.05, 0.05]
-                else:
-                    resource_weights = [0.8] + [0.02] * len(resource_types)
-                
-                resource = random.choices(
-                    [None] + resource_types, 
-                    weights=resource_weights
-                )[0]
-                
-                hexagon = await prisma_client.hexagon.create(
-                    data={
-                        "session_id": game_session_id,
-                        "q": q,
-                        "r": r,
-                        "s": s,
-                        "terrain_id": terrain,
-                        "resource_id": resource
-                    }
-                )
-                hexagons.append(hexagon)
-    else:  # 기본 맵 생성 (다른 맵 타입도 유사하게 구현 가능)
-        for q in range(width):
-            for r in range(height):
-                s = -q - r
-                terrain = random.choice(terrain_types)
-                resource = random.choices([None] + resource_types, weights=[0.8] + [0.02] * len(resource_types))[0]
-                
-                hexagon = await prisma_client.hexagon.create(
-                    data={
-                        "session_id": game_session_id,
-                        "q": q,
-                        "r": r,
-                        "s": s,
-                        "terrain_id": terrain,
-                        "resource_id": resource
-                    }
-                )
-                hexagons.append(hexagon)
+    for q in range(width):
+        for r in range(height):
+            s = -q - r
+            
+            # 대륙 중심으로부터의 거리 계산
+            distances = [
+                math.sqrt((q - seed_q)**2 + (r - seed_r)**2) 
+                for seed_q, seed_r in continent_seeds
+            ]
+            
+            # 가장 가까운 대륙 중심 선택
+            nearest_continent_index = distances.index(min(distances))
+            distance_to_continent = min(distances)
+            
+            # 대륙 크기와 변동성 고려
+            max_continent_radius = min(width, height) * (0.5 + current_distribution["continent_size_variance"])
+            normalized_distance = distance_to_continent / max_continent_radius
+            
+            # 지형 카테고리 결정
+            terrain_category = (
+                "primary" if normalized_distance < 0.3 else 
+                "secondary" if normalized_distance < 0.6 else 
+                "water"
+            )
+            
+            # 해당 카테고리의 지형 후보 선택
+            terrain_candidates = {
+                "primary": current_distribution.get("primary_terrains", []),
+                "secondary": current_distribution.get("secondary_terrains", []),
+                "water": current_distribution.get("water_terrains", [])
+            }.get(terrain_category, [])
+            
+            # 지형 선택
+            terrain_id = random.choice(terrain_candidates) if terrain_candidates else "Plains"
+            
+            # 자원 선택 로직
+            possible_resources = terrain_resource_mapping.get(terrain_id, [])
+            
+            # 자원 타입 선택 (보너스 > 사치 > 전략)
+            resource_type_priorities = ['Bonus', 'Luxury', 'Strategic']
+            suitable_resources = [
+                r.id for r in resources 
+                if r.id in possible_resources and 
+                   r.type in resource_type_priorities
+            ]
+            
+            # 랜덤 자원 선택 (일정 확률로 자원 없음)
+            resource_id = random.choices(
+                [None] + suitable_resources, 
+                weights=[0.7] + [0.3 / len(suitable_resources)] * len(suitable_resources)
+            )[0]
+            
+            # 헥사곤 생성
+            hexagon = await prisma_client.hexagon.create(
+                data={
+                    "session_id": game_session_id,
+                    "q": q,
+                    "r": r,
+                    "s": s,
+                    "terrain_id": terrain_id,
+                    "resource_id": resource_id
+                }
+            )
+            
+            hexagons.append(hexagon)
     
     return hexagons
 
@@ -246,52 +281,52 @@ async def ensure_basic_game_data():
         {
             "id": "plains",
             "name": "평원",
-            "yield_json": {"food": 1, "production": 1}
+            "yield_json": json.dumps({"food": 1, "production": 1})
         },
         {
             "id": "grassland",
             "name": "초원",
-            "yield_json": {"food": 2, "production": 0}
+            "yield_json": json.dumps({"food": 2, "production": 0})
         },
         {
             "id": "desert",
             "name": "사막",
-            "yield_json": {"food": 0, "production": 0}
+            "yield_json": json.dumps({"food": 0, "production": 0})
         },
         {
             "id": "hills",
             "name": "언덕",
-            "yield_json": {"food": 0, "production": 2}
+            "yield_json": json.dumps({"food": 0, "production": 2})
         },
         {
             "id": "mountain",
             "name": "산",
-            "yield_json": {"food": 0, "production": 0}
+            "yield_json": json.dumps({"food": 0, "production": 0})
         },
         {
             "id": "forest",
             "name": "숲",
-            "yield_json": {"food": 1, "production": 1}
+            "yield_json": json.dumps({"food": 1, "production": 1})
         },
         {
             "id": "tundra",
             "name": "툰드라",
-            "yield_json": {"food": 1, "production": 0}
+            "yield_json": json.dumps({"food": 1, "production": 0})
         },
         {
             "id": "ocean",
             "name": "대양",
-            "yield_json": {"food": 1, "production": 0}
+            "yield_json": json.dumps({"food": 1, "production": 0})
         },
         {
             "id": "coast",
             "name": "해안",
-            "yield_json": {"food": 1, "production": 0}
+            "yield_json": json.dumps({"food": 1, "production": 0})
         },
         {
             "id": "lake",
             "name": "호수",
-            "yield_json": {"food": 2, "production": 0}
+            "yield_json": json.dumps({"food": 2, "production": 0})
         }
     ]
     
@@ -540,8 +575,11 @@ async def create_game_session(request: GameSessionCreate):
         current_time = datetime.now()
         game_session = await prisma_client.gamesession.create(
             data={
-                "host_user_id": 1,  # TODO: 실제 사용자 인증 시스템 구현 필요
-                "map_type": request.mapType,
+                "host_user_id": 1,
+                "map_type_id": request.mapType.value,
+                "game_mode_id": request.gameSpeed,
+                "difficulty_id": request.difficulty.value,
+                "civ_count": request.civCount,
                 "seed": int(time.time() * 1000),
                 "current_turn": 1,
                 "current_player": 1,
@@ -772,7 +810,7 @@ async def get_game_options():
                 "description": mode.description
             } for mode in game_modes
         ]
-        print(game_modes_response, difficulties_response, map_types_response, civilizations_response)
+        
         return {
             "mapTypes": map_types_response,
             "difficulties": difficulties_response,
@@ -784,4 +822,3 @@ async def get_game_options():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"게임 옵션 조회 중 오류 발생: {str(e)}"
         )
-
