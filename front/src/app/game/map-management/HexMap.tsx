@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import {memo} from "react";
 import { cn } from "@/lib/utils";
 import { 
   ZoomIn, ZoomOut, RefreshCw, Home, Eye, Mountain, 
@@ -49,7 +50,7 @@ const calculateMapBounds = (mapData: HexTile[]) => {
 
 
 
-export default function HexMap({ 
+function HexMap({ 
   gameId, 
   onTileClick, 
   selectedTile,
@@ -177,6 +178,7 @@ export default function HexMap({
       const container = containerRef.current;
       if (!container) return;
       
+      
       const containerWidth = container.clientWidth;
       const containerHeight = container.clientHeight;
       
@@ -245,6 +247,8 @@ export default function HexMap({
     );
   };
   // 헥스 그리드 상수
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const HEX_SIZE = 40; // 육각형 크기
   const HEX_HEIGHT = HEX_SIZE * 2;
   const HEX_WIDTH = Math.sqrt(3) / 2 * HEX_HEIGHT;
@@ -357,6 +361,9 @@ useEffect(() => {
   // 맵 데이터 로드
   useEffect(() => {
     const loadMapData = async () => {
+      // 이미 데이터가 로드되었으면 중복 요청 방지
+      if (dataLoaded) return;
+      
       try {
         setIsLoading(true);
         
@@ -375,17 +382,28 @@ useEffect(() => {
         }
         
         setIsLoading(false);
-        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+        setDataLoaded(true); // 데이터 로드 완료 표시
+        
+        // 첫 로드 시에만 토스트 표시
+        if (!initialLoadComplete) {
+          showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+          setInitialLoadComplete(true);
+        }
       } catch (err) {
         console.error("맵 데이터 로드 오류:", err);
         setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
         setIsLoading(false);
-        showToast("맵 데이터 로드에 실패했습니다.", "error");
+        
+        // 첫 로드 에러 시에만 토스트 표시
+        if (!initialLoadComplete) {
+          showToast("맵 데이터 로드에 실패했습니다.", "error");
+          setInitialLoadComplete(true);
+        }
       }
     };
   
     loadMapData();
-  }, []);
+  }, [dataLoaded, initialLoadComplete]);
   
   // Korea 문명 위치로 포커싱하는 함수
   const focusOnPlayerCity = useCallback((hexData: HexTile[]) => {
@@ -1115,3 +1133,5 @@ const addOverlay = (baseColor: string, overlay: string): string => {
   // 간단하게 어두운 오버레이 효과를 위해 검은색 반투명 오버레이를 적용한 새 색상 리턴
   return overlay; // 실제 구현에서는 두 색상을 섞는 로직이 필요할 수 있음
 };
+
+export default React.memo(HexMap);

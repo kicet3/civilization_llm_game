@@ -523,13 +523,32 @@ class GameService {
     
     console.log('getMap 호출됨, 게임 ID:', gameId);
     
-    // 진행 중인 요청이 있으면 대기하지 않고 기본 맵 반환
+    // 캐시된 맵 데이터가 있으면 사용
+    if (this.cachedMapData) {
+      console.log('캐시된 맵 데이터 사용');
+      return this.cachedMapData.data;
+    }
+    
+    // 진행 중인 요청이 있으면 대기하지 않고 기존 캐시 또는 기본 맵 반환
     if (this.pendingRequests['map']) {
       console.log('이미 진행 중인 요청이 있음, 캐시 사용');
       
-      // 그래도 캐시가 있으면 사용
-      if (this.cachedMapData) {
-        return this.cachedMapData.data;
+      // 로컬 스토리지 확인
+      const storedMapData = localStorage.getItem(this.LOCAL_STORAGE_MAP_DATA_KEY);
+      if (storedMapData) {
+        try {
+          const parsedData = JSON.parse(storedMapData);
+          if (parsedData.tiles) {
+            console.log('로컬 스토리지 데이터 사용');
+            this.cachedMapData = {
+              data: parsedData.tiles,
+              timestamp: Date.now()
+            };
+            return parsedData.tiles;
+          }
+        } catch (e) {
+          console.log('로컬 스토리지 파싱 오류');
+        }
       }
       
       return this.generateFallbackMap();
@@ -577,16 +596,9 @@ class GameService {
       console.error('맵 데이터 요청 오류:', error);
     }
     
-    // API 요청 실패 시 캐시 확인
-    console.log('API 요청 실패, 캐시 확인');
+    // API 요청 실패 시 로컬 스토리지 확인
+    console.log('API 요청 실패, 로컬 스토리지 확인');
     
-    // 메모리 캐시 확인
-    if (this.cachedMapData) {
-      console.log('메모리 캐시 사용');
-      return this.cachedMapData.data;
-    }
-    
-    // 로컬 스토리지 확인
     const storedMapData = localStorage.getItem(this.LOCAL_STORAGE_MAP_DATA_KEY);
     if (storedMapData) {
       try {
@@ -600,7 +612,6 @@ class GameService {
           return parsedData.tiles;
         }
       } catch (e) {
-        // 파싱 오류 시 조용히 다음 단계로 진행
         console.log('로컬 스토리지 파싱 오류');
       }
     }

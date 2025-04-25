@@ -31,6 +31,71 @@ interface InfoPanel {
   data: any | null;
 }
 
+// 로그 패널 분리하여 React.memo로 최적화
+const LogPanel = React.memo(({ 
+  log, 
+  commandInput, 
+  setCommandInput, 
+  handleCommand 
+}: {
+  log: LogEntry[];
+  commandInput: string;
+  setCommandInput: (value: string) => void;
+  handleCommand: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
+}) => {
+  return (
+    <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
+      {/* 로그 영역 */}
+      <div className="flex-1 p-3 overflow-auto" id="logContainer">
+        <div className="space-y-3">
+          {log.map((entry: LogEntry, idx: number) => (
+            <div key={idx} className={cn(
+              "p-2 rounded",
+              entry.type === 'system' ? 'bg-slate-700 text-gray-300' :
+              entry.type === 'advisor' ? 'bg-indigo-900' :
+              entry.type === 'event' ? 'bg-amber-900' : 'bg-slate-600'
+            )}>
+              <div className="flex items-start">
+                <div className="text-sm">
+                  {entry.type === 'system' && <span className="font-bold text-xs mr-1">[시스템]</span>}
+                  {entry.type === 'advisor' && <span className="font-bold text-xs mr-1">[조언자]</span>}
+                  {entry.type === 'event' && <span className="font-bold text-xs mr-1">[이벤트]</span>}
+                  {entry.type === 'player' && <span className="font-bold text-xs mr-1">[명령]</span>}
+                  {entry.content}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* 명령 입력 및 정보 패널 영역 */}
+      <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
+        <div className="flex-1 overflow-auto mb-3">
+          
+        </div>
+        
+        {/* 명령 입력 */}
+        <form onSubmit={handleCommand} className="flex">
+          <input
+            type="text"
+            value={commandInput}
+            onChange={(e) => setCommandInput(e.target.value)}
+            placeholder="명령을 입력하세요..."
+            className="flex-1 bg-slate-700 rounded-l p-2 focus:outline-none"
+          />
+          <button 
+            type="submit"
+            className="bg-indigo-600 hover:bg-indigo-700 px-4 rounded-r flex items-center"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+});
+
 export default function GamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -78,7 +143,34 @@ export default function GamePage() {
     show: boolean;
     type?: 'info' | 'success' | 'warning' | 'error';
   }>({ message: '', show: false });
+    // 탭 컴포넌트 캐싱을 위한 상태 추가 (약 50-70줄 사이 다른 useState 근처에 추가)
+const [tabComponents, setTabComponents] = useState<{[key: string]: React.ReactNode}>({});
+
+// 초기화 시 탭 컴포넌트 생성 (다른 useEffect 근처에 추가)
+useEffect(() => {
+  if (isLoading || error || !gameState) return;
   
+  setTabComponents({
+    map: <HexMap 
+      gameId={gameId}
+      onTileClick={handleSelectTile}
+      selectedTile={selectedTile}
+    />,
+    research: <ResearchPanel updateGameData={updateGameData} />,
+    units: <UnitPanel />,
+    diplomacy: <DiplomacyPanel 
+      mapData={Array.isArray(mapData) ? mapData : []} 
+      playerCivId={playerCiv}
+    />,
+    turn: <TurnManager 
+      turn={turn}
+      phase={phase}
+      onEndTurn={endTurn}
+      updateGameData={updateGameData}
+      events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
+    />
+  });
+}, [gameState, isLoading, error]);
   // 게임 초기화
   
 useEffect(() => {
@@ -385,50 +477,61 @@ useEffect(() => {
   };
   
   // 현재 선택된 탭에 따른 컴포넌트 렌더링
-  const renderTabContent = () => {
-    try {
-      switch (selectedTab) {
-        case 'map':
-          return (
-            <HexMap 
-              gameId={gameId}
-              onTileClick={handleSelectTile}
-              selectedTile={selectedTile}
-            />
-          );
-        case 'research':
-          return <ResearchPanel updateGameData={updateGameData} />;
-        case 'units':
-          return <UnitPanel />;
-        case 'diplomacy':
-          return (
-            <DiplomacyPanel 
-              mapData={Array.isArray(mapData) ? mapData : []} 
-              playerCivId={playerCiv}
-            />
-          );
-        case 'turn':
-          return (
-            <TurnManager 
-              turn={turn}
-              phase={phase}
-              onEndTurn={endTurn}
-              updateGameData={updateGameData}
-              events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
-            />
-          );
-        default:
-          return <div className="p-4">선택된 탭이 없습니다</div>;
-      }
-    } catch (err) {
-      console.error('탭 렌더링 중 오류:', err);
+  
+const renderTabContent = () => {
+  try {
+    if (isLoading) {
+      return <div className="flex items-center justify-center h-full">로딩 중...</div>;
+    }
+    
+    if (error) {
       return (
-        <div className="p-4 text-red-400">
-          탭 콘텐츠를 로드하는 중 오류가 발생했습니다. 다른 탭을 선택해보세요.
+        <div className="flex flex-col items-center justify-center h-full">
+          <div className="text-red-500 mb-4">{error}</div>
+          <button
+            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700"
+            onClick={() => router.push('/game/select-mode')}
+          >
+            게임 선택 페이지로 돌아가기
+          </button>
         </div>
       );
     }
-  };
+    
+    // 탭 컴포넌트가 초기화되지 않았으면 로딩 표시
+    if (Object.keys(tabComponents).length === 0) {
+      return <div className="flex items-center justify-center h-full">탭 초기화 중...</div>;
+    }
+    
+    // 캐시된 컴포넌트 사용
+    return (
+      <div className="h-[100%]">
+        <div style={{ display: selectedTab === 'map' ? 'block' : 'none', height: '100%' }}>
+          {tabComponents.map}
+        </div>
+        <div style={{ display: selectedTab === 'research' ? 'block' : 'none', height: '100%' }}>
+          {tabComponents.research}
+        </div>
+        <div style={{ display: selectedTab === 'units' ? 'block' : 'none', height: '100%' }}>
+          {tabComponents.units}
+        </div>
+        <div style={{ display: selectedTab === 'diplomacy' ? 'block' : 'none', height: '100%' }}>
+          {tabComponents.diplomacy}
+        </div>
+        <div style={{ display: selectedTab === 'turn' ? 'block' : 'none', height: '100%' }}>
+          {tabComponents.turn}
+        </div>
+      </div>
+    );
+  } catch (err) {
+    console.error('탭 렌더링 중 오류:', err);
+    return (
+      <div className="p-4 text-red-400">
+        탭 콘텐츠를 로드하는 중 오류가 발생했습니다. 다른 탭을 선택해보세요.
+      </div>
+    );
+  }
+};
   
   // 로딩 중 화면
   if (isLoading) {
@@ -560,61 +663,19 @@ useEffect(() => {
         </div>
         
         {/* 메인 콘텐츠 영역 */}
-        <div className="h-[93vh] flex-1 flex flex-col overflow-hidden">
-          <div className="h-[100%] flex-1 overflow-hidden">
-            {renderTabContent()}
-          </div>
+<div className="h-[93vh] flex-1 flex flex-col overflow-hidden">
+  <div className="h-[100%] flex-1 overflow-hidden">
+    {renderTabContent()}
+  </div>
           
-          {/* 하단 로그 및 명령 영역 */}
-          <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
-            {/* 로그 영역 */}
-            <div className="flex-1 p-3 overflow-auto" id="logContainer">
-              <div className="space-y-3">
-                {log.map((entry: LogEntry, idx: number) => (
-                  <div key={idx} className={cn(
-                    "p-2 rounded",
-                    entry.type === 'system' ? 'bg-slate-700 text-gray-300' :
-                    entry.type === 'advisor' ? 'bg-indigo-900' :
-                    entry.type === 'event' ? 'bg-amber-900' : 'bg-slate-600'
-                  )}>
-                    <div className="flex items-start">
-                      <div className="text-sm">
-                        {entry.type === 'system' && <span className="font-bold text-xs mr-1">[시스템]</span>}
-                        {entry.type === 'advisor' && <span className="font-bold text-xs mr-1">[조언자]</span>}
-                        {entry.type === 'event' && <span className="font-bold text-xs mr-1">[이벤트]</span>}
-                        {entry.type === 'player' && <span className="font-bold text-xs mr-1">[명령]</span>}
-                        {entry.content}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            {/* 명령 입력 및 정보 패널 영역 */}
-            <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
-              <div className="flex-1 overflow-auto mb-3">
-                
-              </div>
-              
-              {/* 명령 입력 */}
-              <form onSubmit={handleCommand} className="flex">
-                <input
-                  type="text"
-                  value={commandInput}
-                  onChange={(e) => setCommandInput(e.target.value)}
-                  placeholder="명령을 입력하세요..."
-                  className="flex-1 bg-slate-700 rounded-l p-2 focus:outline-none"
-                />
-                <button 
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-700 px-4 rounded-r flex items-center"
-                >
-                  <Send size={16} />
-                </button>
-              </form>
-            </div>
-          </div>
+          {/* 하단 로그 및 명령 영역 - 별도 컴포넌트로 분리 */}
+  <LogPanel 
+    log={log}
+    commandInput={commandInput}
+    setCommandInput={setCommandInput}
+    handleCommand={(e: React.FormEvent<HTMLFormElement>) => handleCommand(e)}
+  />
+
         </div>
       </div>
     </div>
