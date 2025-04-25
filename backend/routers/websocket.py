@@ -4,7 +4,8 @@ from datetime import datetime
 import json
 from pydantic import BaseModel, Field
 import uuid
-
+from core.tools.vector_retrieval import vector_retrieval_tool
+from core.tools.game_api import game_api_tool
 router = APIRouter()
 
 # 웹소켓 연결 관리자
@@ -180,24 +181,22 @@ async def websocket_endpoint(websocket: WebSocket):
                         }
                         await manager.broadcast(typing_message)
                         
-                        # AI 응답 메시지 생성 (예시)
-                        ai_response = {
-                            "type": "chat",
+                        # 사용자 입력 텍스트 추출
+                        user_input = message["content"].get("text", "") if isinstance(message["content"], dict) else message["content"]
+                        # AI 벡터 검색 처리
+                        ai_json = vector_retrieval_tool.invoke(user_input)
+                        try:
+                            ai_content = json.loads(ai_json)
+                        except json.JSONDecodeError:
+                            ai_content = {"error": "AI 검색 결과 파싱 실패"}
+                        ai_msg = {
+                            "type": MessageType.CHAT,
                             "sender": "ai_advisor",
                             "timestamp": datetime.now().isoformat(),
-                            "content": {
-                                "text": f"당신의 메시지 '{content.get('text', '')}'에 대한 응답입니다.",
-                                "is_ai": True
-                            }
+                            "content": ai_content
                         }
-                        
-                        # 약간의 지연 시간 후 응답 (타이핑 효과)
-                        import asyncio
-                        await asyncio.sleep(1)
-                        
-                        # AI 응답 저장 및 브로드캐스트
-                        manager.add_to_history(ai_response)
-                        await manager.broadcast(ai_response)
+                        manager.add_to_history(ai_msg)
+                        await manager.broadcast(ai_msg)
                     else:
                         # 일반 채팅 메시지 브로드캐스트
                         await manager.broadcast(message)
@@ -205,6 +204,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif message_type in [MessageType.UNIT_MOVE, MessageType.TURN_END, MessageType.GAME_ACTION]:
                     # 게임 액션 브로드캐스트
                     await manager.broadcast(message)
+                
+                elif message_type == MessageType.TECH_RESEARCH:
+                    # 기술 연구 요청 처리
+                    user_input = message["content"].get("text", "") if isinstance(message["content"], dict) else message["content"]
+                    tech_json = await game_api_tool._arun(user_input)
+                    try:
+                        tech_content = json.loads(tech_json)
+                    except json.JSONDecodeError:
+                        tech_content = {"error": "API 결과 파싱 실패"}
+                    tech_msg = {
+                        "type": MessageType.TECH_RESEARCH,
+                        "sender": "game_api",
+                        "timestamp": datetime.now().isoformat(),
+                        "content": tech_content
+                    }
+                    manager.add_to_history(tech_msg)
+                    await manager.broadcast(tech_msg)
                 
                 else:
                     # 기타 메시지 처리
@@ -271,3 +287,4 @@ async def send_event(event: WebSocketMessage):
         "message": "이벤트가 성공적으로 브로드캐스트되었습니다.",
         "recipients": len(manager.active_connections)
     }
+

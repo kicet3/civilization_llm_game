@@ -1,29 +1,39 @@
 from langchain.tools import BaseTool
-from langchain.vectorstores import FAISS
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.docstore.document import Document
 import os
 import json
 from typing import List, Dict, Any
 import logging
+from pydantic import PrivateAttr
 
 logger = logging.getLogger(__name__)
 
 # 환경변수에서 API 키 가져오기 (없으면 기본값 사용)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "your-api-key-here")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "your-api-key-here")
 
 class VectorRetrievalTool(BaseTool):
-    name = "vector_search"
-    description = "게임 공략 및 어드바이스 검색용 벡터 검색"
+    name: str = "vector_search"
+    description: str = "게임 공략 및 어드바이스 검색용 벡터 검색"
+    # Private attributes
+    _index_path: str = PrivateAttr()
+    _embeddings: GoogleGenerativeAIEmbeddings = PrivateAttr()
+    _vector_store: Any = PrivateAttr(default=None)
+    _game_data: Dict[str, Any] = PrivateAttr()
     
     def __init__(self, index_path: str = "./vector_data"):
         super().__init__()
-        self.index_path = index_path
-        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-        self.vector_store = None
+        self._index_path = index_path
+        
+        # Gemini 임베딩 모델 사용
+        self._embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001", 
+            google_api_key=GOOGLE_API_KEY
+        )
         
         # 사전 정의된 게임 데이터 (실제로는 문서로부터 로드)
-        self.game_data = {
+        self._game_data = {
             "units": self._load_unit_data(),
             "buildings": self._load_building_data(),
             "technologies": self._load_technology_data(),
@@ -36,13 +46,13 @@ class VectorRetrievalTool(BaseTool):
     def _initialize_vector_store(self):
         """벡터 스토어 초기화"""
         try:
-            # 기존 인덱스 로드 시도
-            if os.path.exists(f"{self.index_path}/index.faiss"):
-                self.vector_store = FAISS.load_local(
-                    self.index_path,
-                    self.embeddings
+            # Chroma DB 사용 (FAISS 대신)
+            if os.path.exists(self._index_path):
+                self._vector_store = Chroma(
+                    persist_directory=self._index_path, 
+                    embedding_function=self._embeddings
                 )
-                logger.info(f"기존 FAISS 인덱스를 로드했습니다: {self.index_path}")
+                logger.info(f"기존 Chroma 인덱스를 로드했습니다: {self._index_path}")
             else:
                 # 인덱스가 없으면 새로 생성
                 self._create_vector_store()
@@ -58,7 +68,7 @@ class VectorRetrievalTool(BaseTool):
             documents = []
             
             # 유닛 데이터
-            for unit in self.game_data["units"]:
+            for unit in self._game_data["units"]:
                 content = f"""
                 유닛 이름: {unit['name']}
                 유닛 ID: {unit['id']}
@@ -75,7 +85,7 @@ class VectorRetrievalTool(BaseTool):
                 ))
             
             # 건물 데이터
-            for building in self.game_data["buildings"]:
+            for building in self._game_data["buildings"]:
                 content = f"""
                 건물 이름: {building['name']}
                 건물 ID: {building['id']}
@@ -89,7 +99,7 @@ class VectorRetrievalTool(BaseTool):
                 ))
             
             # 시대 정보
-            for era in self.game_data["eras"]:
+            for era in self._game_data["eras"]:
                 content = f"""
                 시대: {era['name']}
                 ID: {era['id']}
@@ -100,89 +110,31 @@ class VectorRetrievalTool(BaseTool):
                     metadata={"type": "era", "id": era["id"]}
                 ))
             
-            # 추천 생산 전략
-            production_strategies = [
-                {
-                    "name": "초반 도시 확장 전략",
-                    "description": "개척자(Settler)를 우선 생산하여 빠르게 영토를 확장하는 전략입니다. 적절한 위치에 도시를 건설해 자원과 타일을 확보하세요.",
-                    "era": "고대",
-                    "recommended_items": ["settler", "warrior", "granary"]
-                },
-                {
-                    "name": "초반 군사 확장 전략",
-                    "description": "전사(Warrior)와 궁수(Archer)를 우선 생산하여 주변 도시국가나 야만인을 정복하는 전략입니다.",
-                    "era": "고대",
-                    "recommended_items": ["warrior", "archer", "barracks"]
-                },
-                {
-                    "name": "과학 중심 전략",
-                    "description": "도서관(Library)과 대학(University)을 우선 건설하여 과학 발전에 집중하는 전략입니다.",
-                    "era": "고전/중세",
-                    "recommended_items": ["library", "university", "observatory"]
-                },
-                {
-                    "name": "경제 중심 전략",
-                    "description": "시장(Market)과 은행(Bank)을 우선 건설하여 경제 발전에 집중하는 전략입니다.",
-                    "era": "중세/르네상스",
-                    "recommended_items": ["market", "bank", "workshop"]
-                },
-                {
-                    "name": "종교 중심 전략",
-                    "description": "신전(Temple)과 대성당(Cathedral)을 우선 건설하여 종교 영향력을 확장하는 전략입니다.",
-                    "era": "고전/중세",
-                    "recommended_items": ["shrine", "temple", "monastery"]
-                },
-                {
-                    "name": "문화 중심 전략",
-                    "description": "기념비(Monument)와 극장(Theatre)을 우선 건설하여 문화 발전에 집중하는 전략입니다.",
-                    "era": "고전/르네상스",
-                    "recommended_items": ["monument", "amphitheater", "theatre"]
-                },
-                {
-                    "name": "방어 중심 전략",
-                    "description": "성벽(Walls)과 성(Castle)을 우선 건설하여 도시 방어에 집중하는 전략입니다.",
-                    "era": "고전/중세",
-                    "recommended_items": ["walls", "castle", "pikeman"]
-                },
-                {
-                    "name": "생산 중심 전략",
-                    "description": "제분소(Mill)와 대장간(Forge)을 우선 건설하여 생산력을 높이는 전략입니다.",
-                    "era": "고전/중세",
-                    "recommended_items": ["mill", "workshop", "forge"]
-                }
-            ]
+            # Chroma 벡터 스토어 생성
+            self._vector_store = Chroma.from_documents(
+                documents, 
+                self._embeddings, 
+                persist_directory=self._index_path
+            )
             
-            for strategy in production_strategies:
-                content = f"""
-                전략 이름: {strategy['name']}
-                시대: {strategy['era']}
-                설명: {strategy['description']}
-                추천 생산 항목: {', '.join(strategy['recommended_items'])}
-                """
-                documents.append(Document(
-                    page_content=content,
-                    metadata={"type": "strategy", "name": strategy["name"]}
-                ))
-            
-            # FAISS 벡터 스토어 생성
-            self.vector_store = FAISS.from_documents(documents, self.embeddings)
-            
-            # 디렉토리 생성 및 저장
-            os.makedirs(self.index_path, exist_ok=True)
-            self.vector_store.save_local(self.index_path)
-            logger.info(f"FAISS 인덱스를 생성하고 저장했습니다: {self.index_path}")
+            # 디렉토리 생성 및 영구 저장
+            os.makedirs(self._index_path, exist_ok=True)
+            self._vector_store.persist()
+            logger.info(f"Chroma 인덱스를 생성하고 저장했습니다: {self._index_path}")
         
         except Exception as e:
             logger.error(f"벡터 스토어 생성 중 오류 발생: {str(e)}")
     
-    def _run(self, query: str) -> str:
+    def _run(self, text: str = None, query: str = None) -> str:
         """검색 실행"""
         try:
-            if self.vector_store is None:
+            # 통합 입력 처리: query 또는 text 키워드 사용
+            q = query if query is not None else text
+            if self._vector_store is None:
                 self._initialize_vector_store()
             
             # 관련 문서 검색
-            docs = self.vector_store.similarity_search(query, k=3)
+            docs = self._vector_store.similarity_search(q, k=3)
             
             # 결과 포맷팅
             results = []
@@ -487,3 +439,8 @@ class VectorRetrievalTool(BaseTool):
                 "description": "컴퓨터와 인터넷, 우주 탐사"
             }
         ] 
+    
+# 벡터 검색 도구 인스턴스 생성
+vector_retrieval_tool = VectorRetrievalTool()
+
+ 

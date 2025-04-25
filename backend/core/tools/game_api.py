@@ -3,23 +3,30 @@ import httpx
 import json
 from typing import Dict, Any, List, Optional
 import logging
+from pydantic import PrivateAttr
 
 logger = logging.getLogger(__name__)
 
 class GameAPITool(BaseTool):
-    name = "game_api"
-    description = "게임 상태 조회/업데이트용 HTTP API 호출"
+    name: str = "game_api"
+    description: str = "게임 상태 조회/업데이트용 HTTP API 호출"
+    
+    # Private attributes for base_url and HTTP client
+    _base_url: str = PrivateAttr()
+    _client: httpx.AsyncClient = PrivateAttr()
     
     def __init__(self, base_url: str = "http://localhost:8000"):
         super().__init__()
-        self.base_url = base_url
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+        self._base_url = base_url
+        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=30.0)
     
-    async def _arun(self, query: str) -> str:
+    async def _arun(self, text: str = None, query: str = None) -> str:
         """API 비동기 호출"""
+        # 통합 입력 처리: query 또는 text 인자 사용
+        q = query if query is not None else text
         try:
-            # 쿼리 파싱
-            cmd_parts = query.split(maxsplit=1)
+            # 명령어 파싱
+            cmd_parts = q.split(maxsplit=1)
             if len(cmd_parts) < 1:
                 return json.dumps({"error": "명령어가 지정되지 않았습니다."})
             
@@ -44,10 +51,11 @@ class GameAPITool(BaseTool):
             logger.error(f"API 호출 중 오류 발생: {str(e)}")
             return json.dumps({"error": str(e)})
     
-    def _run(self, query: str) -> str:
-        """동기식 호출 - 실제로는 비동기를 실행하기 위한 래퍼"""
+    def _run(self, text: str = None, query: str = None) -> str:
+        """동기식 호출 - BaseTool abstract method 구현"""
         import asyncio
-        return asyncio.run(self._arun(query))
+        # 비동기 _arun을 동기적으로 실행
+        return asyncio.run(self._arun(text, query))
     
     async def _get_game_state(self, params: str) -> str:
         """게임 상태 조회"""
@@ -56,7 +64,7 @@ class GameAPITool(BaseTool):
             if not game_id:
                 return json.dumps({"error": "game_id가 필요합니다."})
             
-            response = await self.client.get(f"/game/state?gameId={game_id}")
+            response = await self._client.get(f"/game/state?gameId={game_id}")
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -75,7 +83,7 @@ class GameAPITool(BaseTool):
             if player_id:
                 url += f"?player_id={player_id}"
             
-            response = await self.client.get(url)
+            response = await self._client.get(url)
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -90,7 +98,7 @@ class GameAPITool(BaseTool):
             if not game_id or not city_id:
                 return json.dumps({"error": "game_id와 city_id가 필요합니다."})
             
-            response = await self.client.get(f"/city/{game_id}/city/{city_id}")
+            response = await self._client.get(f"/city/{game_id}/city/{city_id}")
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -105,7 +113,7 @@ class GameAPITool(BaseTool):
             if not game_id or not city_id:
                 return json.dumps({"error": "game_id와 city_id가 필요합니다."})
             
-            response = await self.client.get(f"/city/{game_id}/city/{city_id}/production")
+            response = await self._client.get(f"/city/{game_id}/city/{city_id}/production")
             response.raise_for_status()
             return response.text
         except Exception as e:
@@ -158,7 +166,7 @@ class GameAPITool(BaseTool):
                 "itemId": item_id
             }
             
-            response = await self.client.post(
+            response = await self._client.post(
                 f"/city/{game_id}/city/{city_id}/production",
                 json=request_data
             )
@@ -173,3 +181,6 @@ class GameAPITool(BaseTool):
         import re
         match = re.search(f"{key}=([^ ]+)", params)
         return match.group(1) if match else None 
+    
+
+game_api_tool = GameAPITool()
