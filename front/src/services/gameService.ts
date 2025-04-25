@@ -8,293 +8,13 @@ import {
   Unit, 
   City, 
   SavedGame, 
-  ApiResponse,
-  GameEvent 
+  ApiResponse 
 } from '@/types/game';
 
 class GameService {
   private gameId: string | null = null;
-  private playerId: string | null = null; // 플레이어 ID 저장용 변수 추가
   private LOCAL_STORAGE_GAME_KEY = 'text_civ_game_id';
   private LOCAL_STORAGE_GAME_STATE_KEY = 'textCivGameState';
-  private LOCAL_STORAGE_PLAYER_ID_KEY = 'text_civ_player_id'; // 플레이어 ID 저장 키 추가
-  
-  // WebSocket 관련 변수
-  private ws: WebSocket | null = null;
-  private wsReconnectTimer: NodeJS.Timeout | null = null;
-  private wsBaseUrl: string;
-  private wsFailCount: number = 0; // 웹소켓 연결 실패 횟수 추적
-  private wsEventListeners: {
-    [key: string]: ((data: any) => void)[];
-  } = {
-    gameUpdate: [],
-    turnChange: [],
-    notification: [],
-    error: []
-  };
-
-  constructor() {
-    // WebSocket URL 설정 (HTTP URL에서 WS URL로 변환)
-    this.wsBaseUrl = BASE_URL.replace('http', 'ws');
-  }
-
-  /**
-   * WebSocket 연결 설정
-   * @param userId 사용자 ID
-   * @param gameId 게임 ID
-   */
-  async connectWebSocket(userId: string, gameId: string): Promise<void> {
-    // playerId가 있으면 그것을 사용, 없으면 userId 사용
-    const playerId = this.playerId || userId;
-    
-    // 기존 연결이 있으면 종료
-    this.disconnectWebSocket();
-
-    // 3회 이상 실패한 경우 연결 시도를 하지 않음
-    if (this.wsFailCount >= 3) {
-      console.log('웹소켓 연결 3회 이상 실패하여 연결 시도를 중단합니다.');
-      this.wsEventListeners.error.forEach(listener => {
-        listener({ 
-          message: '실시간 연결에 반복적으로 실패하여 연결 시도를 중단합니다. 폴백 모드로 계속합니다.',
-        });
-      });
-      return;
-    }
-
-    try {
-      // 개발 환경인 경우 WebSocket 연결을 건너뛸 수 있음
-      if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DISABLE_WS === 'true') {
-        console.log('개발 환경에서 WebSocket 연결 비활성화됨');
-        return;
-      }
-
-      // WebSocket 연결 URL 생성 
-      // 백엔드의 웹소켓 경로는 /ws/{game_id}/{player_id} 형태로 되어 있습니다
-      const wsUrl = `${this.wsBaseUrl}/ws/${encodeURIComponent(gameId)}/${encodeURIComponent(playerId)}`;
-      
-      console.log(`WebSocket 연결 시도: ${wsUrl} (playerId: ${playerId})`);
-      
-      // WebSocket 인스턴스 생성 오류 처리
-      try {
-        this.ws = new WebSocket(wsUrl);
-      } catch (wsError) {
-        console.error('WebSocket 인스턴스 생성 실패:', wsError);
-        this.wsFailCount++; // 실패 횟수 증가
-        console.log(`WebSocket 연결 실패 횟수: ${this.wsFailCount}`);
-        // 에러 이벤트 발생
-        this.wsEventListeners.error.forEach(listener => {
-          listener({ message: 'WebSocket 연결 실패: 서버에 연결할 수 없습니다.' });
-        });
-        return;
-      }
-
-      // 연결 이벤트 핸들러
-      this.ws.onopen = () => {
-        console.log('WebSocket 연결 성공');
-        this.wsFailCount = 0; // 연결 성공 시 실패 횟수 초기화
-        // 재연결 타이머가 있다면 제거
-        if (this.wsReconnectTimer) {
-          clearTimeout(this.wsReconnectTimer);
-          this.wsReconnectTimer = null;
-        }
-      };
-
-      // 메시지 수신 핸들러
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          
-          console.log('WebSocket 메시지 수신:', data);
-          
-          // 이벤트 타입에 따라 리스너 호출
-          if (data.type && this.wsEventListeners[data.type]) {
-            this.wsEventListeners[data.type].forEach(listener => {
-              listener(data.payload || data.data);
-            });
-          }
-          
-          // 게임 상태 업데이트가 포함된 경우
-          if (data.type === 'gameUpdate' && data.payload?.state) {
-            const gameState = this.convertApiResponseToGameState(data.payload.state);
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(gameState));
-            }
-          }
-        } catch (error) {
-          console.error('WebSocket 메시지 처리 오류:', error);
-        }
-      };
-
-      // 연결 종료 핸들러
-      this.ws.onclose = (event) => {
-        console.log(`WebSocket 연결 종료 (코드: ${event.code}): ${event.reason}`);
-        this.ws = null;
-        
-        // 비정상 종료인 경우 재연결 시도 (최대 3번)
-        if (event.code !== 1000) {
-          this.scheduleReconnect(playerId, gameId);
-        }
-      };
-
-      // 에러 핸들러 - 상세 정보 제공
-      this.ws.onerror = (error) => {
-        console.error('WebSocket 오류:', error);
-        this.wsFailCount++; // 실패 횟수 증가
-        console.log(`WebSocket 연결 실패 횟수: ${this.wsFailCount}`);
-        
-        // 에러 이벤트 발생 - 더 자세한 정보 제공
-        this.wsEventListeners.error.forEach(listener => {
-          listener({ 
-            message: '서버 연결 오류가 발생했습니다. 폴백 모드로 계속합니다.',
-            details: error
-          });
-        });
-      };
-      
-      // 60초 후에도 연결이 안 되면 타임아웃 처리
-      const timeoutId = setTimeout(() => {
-        if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-          console.error('WebSocket 연결 타임아웃');
-          this.ws.close();
-          this.ws = null;
-          
-          // 에러 이벤트 발생
-          this.wsEventListeners.error.forEach(listener => {
-            listener({ message: '실시간 서버 연결 타임아웃. 폴백 모드로 계속합니다.' });
-          });
-        }
-      }, 60000);
-      
-      // 연결 되거나 종료되면 타임아웃 취소
-      this.ws.onopen = () => {
-        clearTimeout(timeoutId);
-        console.log('WebSocket 연결 성공');
-        // 재연결 타이머가 있다면 제거
-        if (this.wsReconnectTimer) {
-          clearTimeout(this.wsReconnectTimer);
-          this.wsReconnectTimer = null;
-        }
-      };
-      
-    } catch (error) {
-      console.error('WebSocket 연결 설정 오류:', error);
-      this.wsFailCount++; // 실패 횟수 증가
-      console.log(`WebSocket 연결 실패 횟수: ${this.wsFailCount}`);
-      // 에러를 발생시키지 않고 로그만 남김
-      console.log('실시간 게임 기능이 제한되어 작동합니다.');
-      // 에러 이벤트 발생
-      this.wsEventListeners.error.forEach(listener => {
-        listener({ message: '실시간 게임 연결에 실패했습니다. 제한된 기능으로 작동합니다.' });
-      });
-    }
-  }
-
-  /**
-   * WebSocket 연결 종료
-   */
-  disconnectWebSocket(): void {
-    if (this.ws) {
-      console.log('WebSocket 연결 종료 중...');
-      // 정상 종료 시도
-      this.ws.close(1000, '사용자 요청으로 연결 종료');
-      this.ws = null;
-    }
-    
-    // 재연결 타이머가 있으면 제거
-    if (this.wsReconnectTimer) {
-      clearTimeout(this.wsReconnectTimer);
-      this.wsReconnectTimer = null;
-    }
-  }
-
-  /**
-   * WebSocket 재연결 스케줄링
-   */
-  private scheduleReconnect(userId: string, gameId: string, delay: number = 60000): void {
-    // playerId가 있으면 그것을 사용, 없으면 userId 사용
-    const playerId = this.playerId || userId;
-    
-    // 3회 이상 실패한 경우 재연결을 시도하지 않음
-    if (this.wsFailCount >= 3) {
-      console.log('웹소켓 연결 3회 이상 실패하여 재연결 시도를 중단합니다.');
-      this.wsEventListeners.error.forEach(listener => {
-        listener({ 
-          message: '실시간 연결에 반복적으로 실패하여 재연결 시도를 중단합니다. 폴백 모드로 게임을 계속합니다.',
-        });
-      });
-      return;
-    }
-
-    console.log(`${delay / 1000}초 후 WebSocket 재연결 시도... (playerId: ${playerId})`);
-    
-    // 기존 타이머가 있으면 제거
-    if (this.wsReconnectTimer) {
-      clearTimeout(this.wsReconnectTimer);
-    }
-    
-    // 재연결 타이머 설정
-    this.wsReconnectTimer = setTimeout(() => {
-      this.connectWebSocket(playerId, gameId).catch(error => {
-        console.error('WebSocket 재연결 실패:', error);
-        this.wsFailCount++; // 실패 횟수 증가
-        console.log(`WebSocket 연결 실패 횟수: ${this.wsFailCount}`);
-        
-        // 3회 미만 실패한 경우에만 재연결 시도
-        if (this.wsFailCount < 3) {
-          // 다시 재연결 스케줄링 (지수 백오프로 시간 증가)
-          this.scheduleReconnect(playerId, gameId, Math.min(delay * 1.5, 300000));
-        } else {
-          console.log('웹소켓 연결 3회 이상 실패하여 재연결 시도를 중단합니다.');
-          this.wsEventListeners.error.forEach(listener => {
-            listener({ 
-              message: '실시간 연결에 반복적으로 실패하여 재연결 시도를 중단합니다. 폴백 모드로 게임을 계속합니다.',
-            });
-          });
-        }
-      });
-    }, delay);
-  }
-
-  /**
-   * WebSocket 이벤트 리스너 등록
-   * @param eventType 이벤트 타입
-   * @param callback 콜백 함수
-   */
-  onWebSocketEvent(eventType: 'gameUpdate' | 'turnChange' | 'notification' | 'error', callback: (data: any) => void): void {
-    if (!this.wsEventListeners[eventType]) {
-      this.wsEventListeners[eventType] = [];
-    }
-    this.wsEventListeners[eventType].push(callback);
-  }
-
-  /**
-   * WebSocket 이벤트 리스너 제거
-   * @param eventType 이벤트 타입
-   * @param callback 콜백 함수
-   */
-  offWebSocketEvent(eventType: 'gameUpdate' | 'turnChange' | 'notification' | 'error', callback: (data: any) => void): void {
-    if (this.wsEventListeners[eventType]) {
-      this.wsEventListeners[eventType] = this.wsEventListeners[eventType].filter(
-        listener => listener !== callback
-      );
-    }
-  }
-
-  /**
-   * WebSocket을 통해 메시지 전송
-   * @param action 액션 타입
-   * @param data 전송할 데이터
-   */
-  sendWebSocketMessage(action: string, data: any = {}): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        action,
-        data
-      }));
-    } else {
-      console.error('WebSocket이 연결되어 있지 않습니다.');
-    }
-  }
 
   /**
    * 게임 옵션 가져오기
@@ -372,7 +92,7 @@ class GameService {
     userId: string;
   }): Promise<GameState> {
     try {
-      const response = await fetch(`${BASE_URL}/game/start`, {
+      const response = await fetch(`${BASE_URL}/api/game/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -397,24 +117,7 @@ class GameService {
       localStorage.setItem(this.LOCAL_STORAGE_GAME_KEY, data.id);
       localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(data.initialState));
       
-      // playerId가 응답에 포함되어 있으면 저장
-      if (data.playerId) {
-        this.playerId = data.playerId;
-        localStorage.setItem(this.LOCAL_STORAGE_PLAYER_ID_KEY, data.playerId);
-        console.log(`플레이어 ID 저장: ${data.playerId}`);
-      } else {
-        // playerId가 없으면 userId를 저장
-        this.playerId = userId;
-        localStorage.setItem(this.LOCAL_STORAGE_PLAYER_ID_KEY, userId);
-      }
-      
       this.gameId = data.id;
-      
-      // 게임 ID와 플레이어 ID로 WebSocket 연결 설정
-      if (data.id) {
-        await this.connectWebSocket(this.playerId || userId, data.id);
-      }
-      
       return data.initialState;
     } catch (error) {
       console.error('게임 초기화 중 오류:', error);
@@ -425,41 +128,23 @@ class GameService {
   /**
    * 현재 게임 상태 조회
    */
-  async getGameState(userId: string, gameId?: string): Promise<GameState> {
+  async getGameState(): Promise<GameState> {
     // 로컬 스토리지의 gameId 확인
-    const storedGameId = gameId || localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    // 저장된 playerId 사용, 없으면 userId 사용
-    const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
+    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
     
     if (!storedGameId) {
       throw new Error('진행 중인 게임이 없습니다');
     }
 
     try {
-      // 새로운 API 명세에 맞게 게임 상태 요청
-      const response = await fetch(`${BASE_URL}/map/game/${storedGameId}?user_id=${playerId}`);
+      const response = await fetch(`${BASE_URL}/api/game/state?gameId=${storedGameId}`);
       
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`게임 상태 로드 실패: ${errorText}`);
       }
 
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(`게임 상태 로드 실패: ${result.message}`);
-      }
-      
-      // playerId가 응답에 포함되어 있으면 저장/업데이트
-      if (result.playerId) {
-        this.playerId = result.playerId;
-        localStorage.setItem(this.LOCAL_STORAGE_PLAYER_ID_KEY, result.playerId);
-        console.log(`플레이어 ID 업데이트: ${result.playerId}`);
-      }
-      
-      // API 응답을 GameState 형식으로 변환
-      const gameState = this.convertApiResponseToGameState(result.data);
+      const gameState = await response.json();
       
       // 조회한 게임 상태를 로컬 스토리지에 저장
       localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(gameState));
@@ -472,53 +157,22 @@ class GameService {
   }
 
   /**
-   * 특정 턴의 게임 상태 조회
-   */
-  async getGameStateByTurn(userId: string, gameId: string, turn: number): Promise<GameState> {
-    // 저장된 playerId 사용, 없으면 userId 사용
-    const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
-    
-    try {
-      // 특정 턴의 게임 상태 요청
-      const response = await fetch(`${BASE_URL}/map/game/${gameId}?user_id=${playerId}&turn=${turn}`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`게임 상태 로드 실패: ${errorText}`);
-      }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(`게임 상태 로드 실패: ${result.message}`);
-      }
-      
-      // API 응답을 GameState 형식으로 변환
-      return this.convertApiResponseToGameState(result.data);
-    } catch (error) {
-      console.error(`턴 ${turn}의 게임 상태 조회 중 오류:`, error);
-      throw error;
-    }
-  }
-
-  /**
    * 턴 종료 처리
    */
-  async endTurn(userId: string, gameId?: string): Promise<{ newState: GameState; events: string[] }> {
-    // 게임 ID가 제공되지 않은 경우 로컬 스토리지에서 확인
-    const storedGameId = gameId || localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-    
-    // 저장된 playerId 사용, 없으면 userId 사용
-    const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
+  async endTurn(): Promise<{ newState: GameState; events: string[] }> {
+    const storedGameId = localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
     
     if (!storedGameId) {
       throw new Error('진행 중인 게임이 없습니다');
     }
 
     try {
-      // 새로운 API 명세에 맞게 엔드포인트 호출
-      const response = await fetch(`${BASE_URL}/map/turn/next?game_id=${storedGameId}&user_id=${playerId}`, {
-        method: 'POST'
+      const response = await fetch(`${BASE_URL}/api/game/endturn`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gameId: storedGameId }),
       });
 
       if (!response.ok) {
@@ -528,20 +182,10 @@ class GameService {
 
       const result = await response.json();
       
-      if (!result.success) {
-        throw new Error(`턴 종료 처리 실패: ${result.message}`);
-      }
-      
-      // API 응답 구조에 맞게 데이터 변환
-      const newState = this.convertApiResponseToGameState(result.data);
-      
       // 턴 종료 후 게임 상태 로컬 스토리지에 저장
-      localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(newState));
+      localStorage.setItem(this.LOCAL_STORAGE_GAME_STATE_KEY, JSON.stringify(result.newState));
       
-      return {
-        newState,
-        events: [result.message] // 턴 진행 메시지를 이벤트로 반환
-      };
+      return result;
     } catch (error) {
       console.error('턴 종료 중 오류:', error);
       throw error;
@@ -549,46 +193,9 @@ class GameService {
   }
 
   /**
-   * API 응답을 GameState 형식으로 변환
-   */
-  private convertApiResponseToGameState(apiResponse: any): GameState {
-    // API 응답 구조를 GameState 형식으로 변환하는 로직
-    return {
-      id: apiResponse.game_id || '',
-      turn: apiResponse.current_turn || 1,
-      year: apiResponse.year || 4000 * (apiResponse.current_turn || 1) - 4000, // BC 4000부터 시작
-      resources: apiResponse.resources || {
-        food: 0,
-        production: 0,
-        gold: 0,
-        science: 0,
-        culture: 0,
-        faith: 0,
-        happiness: 0
-      },
-      map: apiResponse.state ? {
-        tiles: apiResponse.state.tiles || [],
-        civs: apiResponse.state.civs || [],
-        turn: apiResponse.current_turn || 1,
-        game_id: apiResponse.game_id || ''
-      } : undefined,
-      cities: apiResponse.state?.cities || [],
-      units: apiResponse.state?.units || [],
-      researchState: apiResponse.state?.research || undefined,
-      policyState: apiResponse.state?.policy || undefined,
-      religionState: apiResponse.state?.religion || undefined,
-      diplomacyState: apiResponse.state?.diplomacy || undefined
-    };
-  }
-
-  /**
    * 현재 게임 세션 종료 및 초기화
    */
   endGameSession() {
-    // WebSocket 연결 종료
-    this.disconnectWebSocket();
-    
-    // 로컬 스토리지 데이터 삭제
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_KEY);
     localStorage.removeItem(this.LOCAL_STORAGE_GAME_STATE_KEY);
   }
@@ -596,22 +203,11 @@ class GameService {
   /**
    * 맵 데이터 가져오기
    */
-  async getMap(userId?: string): Promise<{ hexagons: HexTile[] }> {
+  async getMap(): Promise<{ hexagons: HexTile[] }> {
     try {
-      // 저장된 playerId 사용, 없으면 userId 사용
-      const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
-      
-      console.log("맵 데이터 요청 시작", playerId ? `(playerId: ${playerId})` : '');
-      
-      // playerId가 있으면 쿼리 파라미터로 추가
-      const url = playerId 
-        ? `${BASE_URL}/map/data?user_id=${encodeURIComponent(playerId)}` 
-        : `${BASE_URL}/map/data`;
-      
-      console.log("맵 데이터 요청 URL:", url);
-      
+      console.log("맵 데이터 요청 시작");
       // 백엔드 API 호출
-      const response = await fetch(url);
+      const response = await fetch(`${BASE_URL}/map/data`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -623,21 +219,14 @@ class GameService {
       const rawData = await response.json();
       console.log("맵 데이터 원본 응답:", rawData);
       
-      // playerId가 응답에 포함되어 있으면 저장/업데이트
-      if (rawData.playerId) {
-        this.playerId = rawData.playerId;
-        localStorage.setItem(this.LOCAL_STORAGE_PLAYER_ID_KEY, rawData.playerId);
-        console.log(`플레이어 ID 저장/업데이트: ${rawData.playerId}`);
-      }
-      
       // API 응답 구조에 맞게 데이터 추출
       // 응답이 { success, status_code, message, data: { tiles, civs, turn, game_id }, meta } 구조
-      if (rawData && rawData.success && rawData.data && Array.isArray(rawData.data.tiles)) {
+      if (rawData && rawData.success && rawData.data && rawData.data.tiles) {
         // tiles 배열을 HexTile 형식에 맞게 변환
         const hexagons = rawData.data.tiles.map((tile: any) => ({
           q: tile.q,
           r: tile.r,
-          s: tile.s || -tile.q - tile.r, // s가 없는 경우 계산
+          s: tile.s,
           terrain: tile.terrain,
           resource: tile.resource,
           visible: tile.visible,
@@ -668,17 +257,13 @@ class GameService {
         return { hexagons };
       } else {
         console.error("맵 데이터 구조 오류:", rawData);
-        
-        // 백엔드 연결에 성공했지만 데이터 구조가 다른 경우 폴백 맵 반환
-        console.log("구조 오류로 폴백 맵 생성 중...");
-        const fallbackMap = this.generateFallbackMap();
-        return { hexagons: fallbackMap };
+        throw new Error("맵 데이터 구조가 예상과 다릅니다");
       }
     } catch (error) {
       console.error('맵 데이터 로드 중 오류:', error);
       
       // 백엔드 연결 실패 시 간단한 테스트 맵 데이터 반환
-      console.log("오류로 인한 폴백 맵 생성 중...");
+      console.log("폴백 맵 생성 중...");
       const fallbackMap = this.generateFallbackMap();
       return { hexagons: fallbackMap };
     }
@@ -816,7 +401,7 @@ class GameService {
   async getNaturalWonders(): Promise<{ wonders: any[] }> {
     try {
       // 세션 ID 없이 자연경관 데이터만 요청
-      const response = await fetch(`${BASE_URL}/wonders`);
+      const response = await fetch(`${BASE_URL}/api/wonders`);
       
       if (!response.ok) {
         throw new Error('자연경관 정보 로드 실패');
@@ -874,7 +459,7 @@ class GameService {
   async getAdjacentTiles(q: number, r: number): Promise<{ hexagons: HexTile[] }> {
     try {
       // 세션 ID 없이 인접 타일 정보만 요청
-      const response = await fetch(`${BASE_URL}/map/adjacent?q=${q}&r=${r}`);
+      const response = await fetch(`${BASE_URL}/api/map/adjacent?q=${q}&r=${r}`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -902,7 +487,7 @@ class GameService {
   }> {
     try {
       // 실제 백엔드 API 호출
-      const response = await fetch(`${BASE_URL}/unit/path`, {
+      const response = await fetch(`${BASE_URL}/api/unit/path`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -955,7 +540,7 @@ class GameService {
   }> {
     try {
       // 백엔드 API 호출
-      const response = await fetch(`${BASE_URL}/unit/move`, {
+      const response = await fetch(`${BASE_URL}/api/unit/move`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1001,7 +586,7 @@ class GameService {
   }> {
     try {
       // 백엔드 API 호출
-      const response = await fetch(`${BASE_URL}/unit/command`, {
+      const response = await fetch(`${BASE_URL}/api/unit/command`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1234,233 +819,6 @@ class GameService {
     }
     
     return path;
-  }
-
-  /**
-   * 연구 기술 트리 데이터 가져오기
-   */
-  async getResearchTree(userId: string, gameId?: string): Promise<{
-    techs: { [id: string]: { 
-      id: string;
-      name: string;
-      description: string;
-      cost: number;
-      era: string;
-      prerequisites: string[];
-      unlocks: string[];
-    }};
-    researchState: {
-      science: number;
-      progress: number;
-      currentTechId: string | null;
-      researchedTechIds: string[];
-    };
-  }> {
-    try {
-      // 게임 ID가 제공되지 않은 경우 로컬 스토리지에서 확인
-      const storedGameId = gameId || localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-      
-      // 저장된 playerId 사용, 없으면 userId 사용
-      const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
-      
-      if (!storedGameId) {
-        throw new Error('진행 중인 게임이 없습니다');
-      }
-
-      // 연구 기술 트리 데이터 요청
-      const url = `${BASE_URL}/research/tree?game_id=${storedGameId}&user_id=${encodeURIComponent(playerId)}`;
-      console.log('연구 트리 데이터 요청:', url);
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`연구 트리 로드 실패 (상태 코드: ${response.status})`, errorText);
-        throw new Error(`연구 트리 로드 실패: ${errorText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(`연구 트리 로드 실패: ${result.message}`);
-      }
-      
-      // API 응답 데이터 변환
-      const techs: { [id: string]: any } = {};
-      
-      // 백엔드 응답에서 기술 트리 데이터 추출 및 변환
-      if (result.data && result.data.techs) {
-        result.data.techs.forEach((tech: any) => {
-          techs[tech.id] = {
-            id: tech.id,
-            name: tech.name,
-            description: tech.description || '설명 없음',
-            cost: tech.cost || 0,
-            era: tech.era || '고대',
-            prerequisites: tech.prerequisites || [],
-            unlocks: tech.unlocks || []
-          };
-        });
-      }
-      
-      // 연구 상태 정보 추출
-      const researchState = {
-        science: result.data?.research?.science || 0,
-        progress: result.data?.research?.progress || 0,
-        currentTechId: result.data?.research?.current_tech_id || null,
-        researchedTechIds: result.data?.research?.researched_tech_ids || []
-      };
-      
-      return { techs, researchState };
-    } catch (error) {
-      console.error('연구 트리 데이터 로드 중 오류:', error);
-      
-      // 백엔드 연결 실패 시 간단한 기본 데이터 반환
-      return this.generateFallbackResearchData();
-    }
-  }
-  
-  /**
-   * 연구 시작 요청
-   */
-  async startResearch(userId: string, techId: string, gameId?: string): Promise<{
-    success: boolean;
-    researchState: {
-      science: number;
-      progress: number;
-      currentTechId: string | null;
-      researchedTechIds: string[];
-    };
-  }> {
-    try {
-      // 게임 ID가 제공되지 않은 경우 로컬 스토리지에서 확인
-      const storedGameId = gameId || localStorage.getItem(this.LOCAL_STORAGE_GAME_KEY);
-      
-      // 저장된 playerId 사용, 없으면 userId 사용
-      const playerId = this.playerId || localStorage.getItem(this.LOCAL_STORAGE_PLAYER_ID_KEY) || userId;
-      
-      if (!storedGameId) {
-        throw new Error('진행 중인 게임이 없습니다');
-      }
-      
-      // 연구 시작 요청
-      const response = await fetch(`${BASE_URL}/research/start`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          game_id: storedGameId,
-          user_id: playerId,
-          tech_id: techId
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`연구 시작 실패: ${errorText}`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(`연구 시작 실패: ${result.message}`);
-      }
-      
-      // 연구 상태 정보 추출 및 변환
-      const researchState = {
-        science: result.data?.science || 0,
-        progress: result.data?.progress || 0,
-        currentTechId: result.data?.current_tech_id || techId,
-        researchedTechIds: result.data?.researched_tech_ids || []
-      };
-      
-      return { success: true, researchState };
-    } catch (error) {
-      console.error('연구 시작 중 오류:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * 기본 연구 트리 데이터 생성 (백엔드 연결 실패 시)
-   */
-  private generateFallbackResearchData(): {
-    techs: { [id: string]: any };
-    researchState: {
-      science: number;
-      progress: number;
-      currentTechId: string | null;
-      researchedTechIds: string[];
-    };
-  } {
-    // 기본 기술 트리 데이터
-    const techs: { [id: string]: any } = {
-      pottery: {
-        id: "pottery",
-        name: "도자기",
-        description: "곡물 저장고와 신앙 건물 건설 가능.",
-        cost: 25,
-        era: "고대",
-        prerequisites: [],
-        unlocks: ["곡물 저장고", "신전"]
-      },
-      animal: {
-        id: "animal",
-        name: "동물 사육",
-        description: "목장 건설, 말 자원 채취 가능.",
-        cost: 30,
-        era: "고대",
-        prerequisites: [],
-        unlocks: ["목장", "말 채취"]
-      },
-      mining: {
-        id: "mining",
-        name: "채광",
-        description: "광산 건설, 광물 자원 채취 가능.",
-        cost: 35,
-        era: "고대",
-        prerequisites: [],
-        unlocks: ["광산", "광물 채취"]
-      },
-      sailing: {
-        id: "sailing",
-        name: "범선",
-        description: "항구 건설, 해상 이동 가능.",
-        cost: 40,
-        era: "고대",
-        prerequisites: [],
-        unlocks: ["항구", "해상 이동"]
-      },
-      writing: {
-        id: "writing",
-        name: "문자",
-        description: "도서관 건설 가능.",
-        cost: 50,
-        era: "고대",
-        prerequisites: ["pottery"],
-        unlocks: ["도서관"]
-      },
-      bronzeWorking: {
-        id: "bronzeWorking",
-        name: "청동 가공",
-        description: "창병 유닛 생산 가능.",
-        cost: 55,
-        era: "고대",
-        prerequisites: ["mining"],
-        unlocks: ["창병"]
-      }
-    };
-    
-    // 기본 연구 상태
-    const researchState = {
-      science: 6,
-      progress: 12,
-      currentTechId: "pottery",
-      researchedTechIds: ["pottery"]
-    };
-    
-    return { techs, researchState };
   }
 }
 

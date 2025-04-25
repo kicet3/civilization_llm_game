@@ -9,7 +9,6 @@ import gameService from "@/services/gameService";
 import { HexTile } from "@/types/game";
 interface HexMapProps {
   gameId: string;
-  userId: string;
   onTileClick?: (tile: any) => void;
   selectedTile?: any | null;
   onUnitMove?: (unitId: string, to: { q: number, r: number, s: number }) => void;
@@ -52,7 +51,6 @@ const calculateMapBounds = (mapData: HexTile[]) => {
 
 export default function HexMap({ 
   gameId, 
-  userId,
   onTileClick, 
   selectedTile,
   onUnitMove
@@ -103,8 +101,7 @@ export default function HexMap({
     onMiniMapClick
   }) => {
     const miniMapRef = useRef<HTMLCanvasElement>(null);
-    const miniMapSize = 150; // 미니맵 UI 크기
-    const miniMapCanvasSize = 300; // 실제 캔버스 크기 (고해상도를 위해 2배)
+    const miniMapSize = 150; // 미니맵 크기
     
     useEffect(() => {
       const canvas = miniMapRef.current;
@@ -113,14 +110,10 @@ export default function HexMap({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
-      // 고해상도 렌더링을 위한 설정
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      
       // 캔버스 초기화
-      ctx.clearRect(0, 0, miniMapCanvasSize, miniMapCanvasSize);
+      ctx.clearRect(0, 0, miniMapSize, miniMapSize);
       ctx.fillStyle = '#111';
-      ctx.fillRect(0, 0, miniMapCanvasSize, miniMapCanvasSize);
+      ctx.fillRect(0, 0, miniMapSize, miniMapSize);
       
       // 맵 경계 계산
       const bounds = calculateMapBounds(mapData);
@@ -134,7 +127,7 @@ export default function HexMap({
       const mapHeightInHexes = bounds.maxR - bounds.minR + 2;
       
       // 미니맵 유효 영역 (테두리 고려)
-      const effectiveMiniMapSize = miniMapCanvasSize - 40; // 테두리 여백 20px씩 (캔버스 크기가 2배이므로)
+      const effectiveMiniMapSize = miniMapSize - 20; // 테두리 여백 10px씩
       
       // 미니맵에서 맵 전체가 보이도록 타일 크기 조정
       const tileScaleX = effectiveMiniMapSize / mapWidthInHexes;
@@ -142,8 +135,8 @@ export default function HexMap({
       const tileSize = Math.min(tileScaleX, tileScaleY) * 0.9; // 약간의 여백 유지
       
       // 미니맵 중심
-      const miniMapCenterX = miniMapCanvasSize / 2;
-      const miniMapCenterY = miniMapCanvasSize / 2;
+      const miniMapCenterX = miniMapSize / 2;
+      const miniMapCenterY = miniMapSize / 2;
       
       // 각 헥스 타일 그리기
       mapData.forEach(hex => {
@@ -160,11 +153,7 @@ export default function HexMap({
           } else {
             ctx.fillStyle = getTerrainColor(hex.terrain);
           }
-          
-          // 사각형 대신 원을 그려 더 부드럽게 표현
-          ctx.beginPath();
-          ctx.arc(x, y, tileSize/2, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.fillRect(x - tileSize/2, y - tileSize/2, tileSize, tileSize);
         }
       });
       
@@ -196,14 +185,14 @@ export default function HexMap({
       const viewportHeightOnMinimap = visibleHexesHeight * tileSize;
       
       // 계산된 뷰포트가 너무 크거나 작지 않도록 제한
-      const maxSize = miniMapCanvasSize * 0.9;
-      const minSize = miniMapCanvasSize * 0.1;
+      const maxSize = miniMapSize * 0.9;
+      const minSize = miniMapSize * 0.1;
       const adjustedWidth = Math.min(maxSize, Math.max(minSize, viewportWidthOnMinimap));
       const adjustedHeight = Math.min(maxSize, Math.max(minSize, viewportHeightOnMinimap));
       
       // 보이는 화면 영역 표시
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 3; // 선 굵기 증가 (캔버스 크기가 2배이므로)
+      ctx.lineWidth = 2;
       ctx.strokeRect(
         viewportCenterX - adjustedWidth / 2,
         viewportCenterY - adjustedHeight / 2,
@@ -230,11 +219,10 @@ export default function HexMap({
         {isMiniMapExpanded && (
           <canvas
             ref={miniMapRef}
-            width={miniMapCanvasSize}
-            height={miniMapCanvasSize}
+            width={miniMapSize}
+            height={miniMapSize}
             onClick={handleClick}
             className="bg-slate-800 bg-opacity-70 rounded-lg shadow-md border border-slate-700"
-            style={{ width: miniMapSize, height: miniMapSize }} // CSS로 크기 조정
           />
         )}
       </div>
@@ -350,172 +338,193 @@ useEffect(() => {
     }
   };
 
-  // WebSocket 연결 상태
-  const [wsConnected, setWsConnected] = useState(false);
-  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
-  const [isMapDataLoaded, setIsMapDataLoaded] = useState(false);
-  const [currentTurn, setCurrentTurn] = useState<number | null>(null);
-
-  // 토스트 메시지 표시 함수
-  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
-    setToast({ 
-      message,
-      show: true,
-      type
-    });
-    
-    // 3초 후 자동으로 제거
-    setTimeout(() => {
-      setToast({ message: '', show: false });
-    }, 3000);
-  };
+  // 맵 데이터 로드
+  useEffect(() => {
+    const loadMapData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // gameService를 통해 맵 데이터 로드
+        const response = await gameService.getMap();
+        
+        // hexagons가 undefined일 경우 빈 배열로 처리
+        const hexagons = response?.hexagons || [];
+        console.log("맵 데이터 로드:", response, hexagons);
+        
+        setMapData(hexagons);
+        
+        // 맵 데이터가 로드된 직후에 포커싱
+        if (hexagons.length > 0) {
+          focusOnPlayerCity(hexagons);
+        }
+        
+        setIsLoading(false);
+        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+      } catch (err) {
+        console.error("맵 데이터 로드 오류:", err);
+        setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
+        setIsLoading(false);
+        showToast("맵 데이터 로드에 실패했습니다.", "error");
+      }
+    };
   
-  // 맵 데이터 로드 함수
-  const loadMapData = async () => {
-    // 이미 맵 데이터가 로드되었고 턴이 끝나지 않았다면 중복 요청 방지
-    if (isMapDataLoaded && mapData.length > 0) {
-      console.log("맵 데이터가 이미 로드되어 있습니다. 턴이 끝나기 전까지 다시 로드하지 않습니다.");
+    loadMapData();
+  }, []);
+  
+  // Korea 문명 위치로 포커싱하는 함수
+  const focusOnPlayerCity = useCallback((hexData: HexTile[]) => {
+    if (!hexData || hexData.length === 0 || !containerRef.current) {
       return;
     }
-
-    try {
-      setIsLoading(true);
-      
-      // gameService를 통해 맵 데이터 로드 (userId 전달)
-      const response = await gameService.getMap(userId);
-      
-      // hexagons가 undefined일 경우 빈 배열로 처리
-      const hexagons = response?.hexagons || [];
-      console.log("맵 데이터 로드:", response, hexagons);
-      
-      setMapData(hexagons);
-      setIsMapDataLoaded(true);
-      
-      // 현재 턴 정보 저장 (맵 데이터에 turn 정보가 있다면)
-      if (response && 'turn' in response) {
-        setCurrentTurn(typeof response.turn === 'number' ? response.turn : null);
-      }
-      
-      // 맵 데이터가 로드된 직후에 포커싱
-      if (hexagons.length > 0) {
-        focusOnPlayerCity(hexagons);
-      }
-      
-      setIsLoading(false);
-      showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
-    } catch (err) {
-      console.error("맵 데이터 로드 오류:", err);
-      setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
-      setIsLoading(false);
-      showToast("맵 데이터 로드에 실패했습니다.", "error");
-    }
-  };
-  
-  // WebSocket 연결 설정 함수
-  const setupWebSocketConnection = useCallback(async () => {
-    if (!gameId || !userId) return;
     
-    try {
-      // WebSocket 연결 설정
-      await gameService.connectWebSocket(userId, gameId);
-      setWsConnected(true);
-      showToast("실시간 게임 서버에 연결되었습니다.", "success");
-      
-      // 게임 업데이트 이벤트 핸들러 등록
-      const handleGameUpdate = (data: any) => {
-        console.log('게임 상태 업데이트 수신:', data);
-        
-        // 턴 변경 감지
-        let turnChanged = false;
-        if (data.current_turn && currentTurn !== null) {
-          const newTurn = Number(data.current_turn);
-          if (!isNaN(newTurn) && newTurn !== currentTurn) {
-            setCurrentTurn(newTurn);
-            turnChanged = true;
-            console.log(`턴이 변경되었습니다: ${currentTurn} -> ${newTurn}`);
-          }
-        }
-        
-        // 맵 데이터 업데이트 (턴이 변경되었거나 맵 데이터가 없는 경우에만)
-        if (data.tiles && (turnChanged || !isMapDataLoaded || mapData.length === 0)) {
-          setMapData(data.tiles);
-          setIsMapDataLoaded(true);
-          console.log("WebSocket을 통해 맵 데이터가 업데이트되었습니다.");
-        }
-        
-        setLastUpdateTime(new Date());
-      };
-      
-      // 알림 이벤트 핸들러 등록
-      const handleNotification = (data: any) => {
-        if (data.message) {
-          showToast(data.message, data.type || 'info');
-        }
-        
-        // 턴 종료 알림인 경우 맵 데이터 재로드 플래그 설정
-        if (data.message && (data.message.includes('턴이 끝났습니다') || data.message.includes('다음 턴'))) {
-          setIsMapDataLoaded(false);
-          console.log("턴이 종료되었습니다. 다음 맵 데이터 로드가 필요합니다.");
-        }
-      };
-      
-      // 오류 이벤트 핸들러 등록
-      const handleError = (data: any) => {
-        console.log('WebSocket 오류 이벤트 수신:', data);
-        showToast(data.message || '오류가 발생했습니다.', 'error');
-        
-        // WebSocket 연결 오류 시 백업 모드 활성화
-        if (data.message?.includes('서버 연결 오류') || data.message?.includes('타임아웃')) {
-          setWsConnected(false);
-          
-          // 맵 데이터가 없는 경우에만 폴백 데이터 로드
-          if (!isMapDataLoaded || mapData.length === 0) {
-            loadMapData();
-          }
-        }
-      };
-      
-      // 이벤트 리스너 등록
-      gameService.onWebSocketEvent('gameUpdate', handleGameUpdate);
-      gameService.onWebSocketEvent('notification', handleNotification);
-      gameService.onWebSocketEvent('error', handleError);
-      
-      // 클린업 함수에서 이벤트 리스너 제거
-      return () => {
-        gameService.offWebSocketEvent('gameUpdate', handleGameUpdate);
-        gameService.offWebSocketEvent('notification', handleNotification);
-        gameService.offWebSocketEvent('error', handleError);
-      };
-    } catch (error) {
-      console.error('WebSocket 연결 실패:', error);
-      setWsConnected(false);
-      showToast("실시간 게임 서버 연결에 실패했습니다. 오프라인 모드로 계속합니다.", "error");
-      
-      // 맵 데이터가 없는 경우에만 폴백 데이터 로드
-      if (!isMapDataLoaded || mapData.length === 0) {
-        loadMapData();
+    // 왼쪽 상단 헥스 타일 찾기 (가장 작은 q, r 값을 가진 타일)
+    let leftTopTile = hexData[0];
+    
+    hexData.forEach(hex => {
+      // q, r 값이 작을수록 왼쪽 상단에 위치
+      if (hex.q < leftTopTile.q || (hex.q === leftTopTile.q && hex.r < leftTopTile.r)) {
+        leftTopTile = hex;
       }
+    });
+    
+    console.log("왼쪽 상단 타일 찾음:", leftTopTile); // 디버깅용
+    
+    const container = containerRef.current;
+    
+    // 초기 맵 스케일 설정
+    const initialScale = 1.2;
+    setScale(initialScale);
+    
+    // 정확한 픽셀 좌표 계산
+    const x = leftTopTile.q * HEX_WIDTH * initialScale + ((leftTopTile.r % 2) * HEX_WIDTH * initialScale) / 2;
+    const y = leftTopTile.r * HEX_VERT * initialScale;
+    
+    // 왼쪽 상단 타일이 화면 왼쪽 상단에서 약간 떨어진 위치에 오도록 오프셋 계산
+    const marginX = 100; // 왼쪽 여백
+    const marginY = 100; // 상단 여백
+    
+    setOffset({
+      x: marginX - x,
+      y: marginY - y
+    });
+    
+    console.log(`왼쪽 상단으로 포커싱 설정 - 스케일: ${initialScale}, 오프셋:`, {
+      x: marginX - x,
+      y: marginY - y
+    });
+    
+    // 선택된 타일로 설정 (선택적)
+    if (onTileClick) {
+      onTileClick(leftTopTile);
     }
-  }, [gameId, userId, showToast, mapData, isMapDataLoaded, currentTurn]);
-
-  // 컴포넌트 마운트 시 맵 데이터 로드 및 WebSocket 연결
+  }, [onTileClick]);
+  
+  // 맵 데이터가 변경될 때마다 플레이어 위치로 포커싱 (최초 1회만)
   useEffect(() => {
-    if (gameId && userId) {
-      // 먼저 맵 데이터 로드, 그 다음 WebSocket 연결
-      loadMapData().then(() => {
-        setupWebSocketConnection();
-      }).catch(err => {
-        console.error("초기 맵 데이터 로드 오류:", err);
-        // 맵 데이터 로드 실패해도 WebSocket 연결 시도
-        setupWebSocketConnection();
-      });
-      
-      return () => {
-        // 컴포넌트 언마운트 시 WebSocket 연결 종료
-        gameService.disconnectWebSocket();
-      };
+    if (mapData && mapData.length > 0 && !isInitialFocusSet.current) {
+      focusOnPlayerCity(mapData);
+      isInitialFocusSet.current = true; // 초기 포커싱 완료 표시
     }
-  }, [gameId, userId, loadMapData, setupWebSocketConnection]);
+  }, [mapData, focusOnPlayerCity]);
+  
+  // 초기 포커싱 완료 여부를 추적하는 ref
+  const isInitialFocusSet = useRef(false);
+
+  // 캔버스 크기 설정
+  useEffect(() => {
+    if (!canvasRef.current || !containerRef.current) return;
+    
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+      
+      // 컨테이너 크기에 맞게 캔버스 크기 설정
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      
+      // 맵 데이터가 있을 경우 맵 경계 계산
+      if (mapData && mapData.length > 0) {
+        const bounds = calculateMapBounds(mapData);
+        const mapWidthInHexes = bounds.maxQ - bounds.minQ + 1;
+        const mapHeightInHexes = bounds.maxR - bounds.minR + 1;
+        
+        // 맵의 실제 크기 계산 (픽셀 단위)
+        const mapWidthInPixels = mapWidthInHexes * HEX_WIDTH * scale;
+        const mapHeightInPixels = mapHeightInHexes * HEX_VERT * scale;
+        
+        // 컨테이너 크기에 맞춰 맵 스케일 자동 조정
+        const containerAspectRatio = container.clientWidth / container.clientHeight;
+        const mapAspectRatio = mapWidthInPixels / mapHeightInPixels;
+        
+        let newScale = scale;
+        
+        // 맵을 컨테이너에 꽉 차게 표시하기 위한 스케일 계산
+        if (scale === 0.5) { // 최소 축소 시 맵이 화면에 꽉 차도록
+          if (containerAspectRatio > mapAspectRatio) {
+            // 세로로 꽉 차게
+            newScale = container.clientHeight / (mapHeightInHexes * HEX_VERT);
+          } else {
+            // 가로로 꽉 차게
+            newScale = container.clientWidth / (mapWidthInHexes * HEX_WIDTH);
+          }
+          
+          // 여백 최소화를 위해 약간 더 크게 (5% 정도)
+          newScale *= 1.05;
+          
+          // 스케일 값 업데이트 (범위 내에서)
+          newScale = Math.max(0.5, Math.min(2, newScale));
+          
+          if (newScale !== scale) {
+            setScale(newScale);
+            return; // 스케일이 변경되면 useEffect가 다시 실행됨
+          }
+        }
+        
+        // 맵 중앙 정렬
+        setOffset({
+          x: (container.clientWidth - mapWidthInPixels) / 2 + (HEX_WIDTH * scale / 2),
+          y: (container.clientHeight - mapHeightInPixels) / 2 + (HEX_VERT * scale / 2)
+        });
+      } else {
+        // 맵 데이터가 없을 경우 기본 중앙 정렬
+        setOffset({
+          x: container.clientWidth / 2,
+          y: container.clientHeight / 2
+        });
+      }
+    };
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    return () => {
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, [mapData, scale]);
+
+  // 맵 렌더링 시 캔버스 크기 조정
+  useEffect(() => {
+    if (mapData && mapData.length > 0 && containerRef.current) {
+      const bounds = calculateMapBounds(mapData);
+      setMapBounds(bounds);
+      
+      // 맵 크기에 맞춰 캔버스 뷰포트 조정
+      const container = containerRef.current;
+      const mapWidthInHexes = bounds.maxQ - bounds.minQ + 1;
+      const mapHeightInHexes = bounds.maxR - bounds.minR + 1;
+      
+      // 맵의 실제 크기 계산 (픽셀 단위)
+      const mapWidthInPixels = mapWidthInHexes * HEX_WIDTH * scale;
+      const mapHeightInPixels = mapHeightInHexes * HEX_VERT * scale;
+      
+      // 맵 중앙 정렬 (스케일 변경 시에도 유지)
+      setOffset({
+        x: (container.clientWidth - mapWidthInPixels) / 2 + (HEX_WIDTH * scale / 2),
+        y: (container.clientHeight - mapHeightInPixels) / 2 + (HEX_VERT * scale / 2)
+      });
+    }
+  }, [mapData, scale]);
 
   // 맵 렌더링
   useEffect(() => {
@@ -919,54 +928,43 @@ useEffect(() => {
       y: containerRef.current.clientHeight / 2
     });
   };
-
-  // Korea 문명 위치로 포커싱하는 함수
-  const focusOnPlayerCity = useCallback((hexData: HexTile[]) => {
-    if (!hexData || hexData.length === 0 || !containerRef.current) {
-      return;
-    }
-    
-    // 왼쪽 상단 헥스 타일 찾기 (가장 작은 q, r 값을 가진 타일)
-    let leftTopTile = hexData[0];
-    
-    hexData.forEach(hex => {
-      // q, r 값이 작을수록 왼쪽 상단에 위치
-      if (hex.q < leftTopTile.q || (hex.q === leftTopTile.q && hex.r < leftTopTile.r)) {
-        leftTopTile = hex;
+  
+  // 맵 새로고침
+  const handleRefreshMap = () => {
+    // 데이터 다시 로드
+    const loadMapData = async () => {
+      try {
+        setIsLoading(true);
+        
+        // gameService를 통해 맵 데이터 로드
+        const response = await gameService.getMap();
+        
+        // hexagons가 undefined일 경우 빈 배열로 처리
+        const hexagons = response?.hexagons || [];
+        console.log("맵 데이터 로드:", response, hexagons);
+        
+        setMapData(hexagons);
+        
+        setIsLoading(false);
+        showToast("맵 데이터를 성공적으로 불러왔습니다.", "success");
+      } catch (err) {
+        console.error("맵 데이터 로드 오류:", err);
+        setError(err instanceof Error ? err.message : '맵 데이터 로드 실패');
+        setIsLoading(false);
+        showToast("맵 데이터 로드에 실패했습니다.", "error");
       }
-    });
-    
-    console.log("왼쪽 상단 타일 찾음:", leftTopTile); // 디버깅용
-    
-    const container = containerRef.current;
-    
-    // 초기 맵 스케일 설정
-    const initialScale = 1.2;
-    setScale(initialScale);
-    
-    // 정확한 픽셀 좌표 계산
-    const x = leftTopTile.q * HEX_WIDTH * initialScale + ((leftTopTile.r % 2) * HEX_WIDTH * initialScale) / 2;
-    const y = leftTopTile.r * HEX_VERT * initialScale;
-    
-    // 왼쪽 상단 타일이 화면 왼쪽 상단에서 약간 떨어진 위치에 오도록 오프셋 계산
-    const marginX = 100; // 왼쪽 여백
-    const marginY = 100; // 상단 여백
-    
-    setOffset({
-      x: marginX - x,
-      y: marginY - y
-    });
-    
-    console.log(`왼쪽 상단으로 포커싱 설정 - 스케일: ${initialScale}, 오프셋:`, {
-      x: marginX - x,
-      y: marginY - y
-    });
-    
-    // 선택된 타일로 설정 (선택적)
-    if (onTileClick) {
-      onTileClick(leftTopTile);
-    }
-  }, [onTileClick]);
+    };
+
+    loadMapData();
+  };
+  
+  // 토스트 메시지 표시
+  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+    setToast({ message, show: true, type });
+    setTimeout(() => {
+      setToast({ message: '', show: false });
+    }, 3000);
+  };
 
   // 로딩 중 화면
   if (isLoading) {
@@ -983,7 +981,7 @@ useEffect(() => {
       <div className="flex flex-col items-center justify-center h-full bg-slate-900">
         <div className="text-xl text-red-400 mb-4">{error}</div>
         <button 
-          onClick={loadMapData}
+          onClick={handleRefreshMap}
           className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-700"
         >
           다시 시도
@@ -1060,27 +1058,6 @@ useEffect(() => {
         mapScale={scale}
         onMiniMapClick={handleMiniMapClick}
       />
-      
-      {/* WebSocket 연결 상태 표시 */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 text-xs bg-black bg-opacity-50 p-1 rounded">
-        <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span>{wsConnected ? '서버 연결됨' : '서버 연결 안됨'}</span>
-        {currentTurn !== null && (
-          <span className="ml-2">
-            현재 턴: {currentTurn}
-          </span>
-        )}
-        {lastUpdateTime && (
-          <span className="ml-2">
-            최근 업데이트: {lastUpdateTime.toLocaleTimeString()}
-          </span>
-        )}
-        {isMapDataLoaded && (
-          <span className="ml-2 text-green-300">
-            ✓ 맵 로드됨
-          </span>
-        )}
-      </div>
     </div>
   );
 }
