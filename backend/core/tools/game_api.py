@@ -1,14 +1,14 @@
 from langchain.tools import BaseTool
 import httpx
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, Type
 import logging
 
 logger = logging.getLogger(__name__)
 
 class GameAPITool(BaseTool):
-    name = "game_api"
-    description = "게임 상태 조회/업데이트용 HTTP API 호출"
+    name: str = "game_api"
+    description: str = "게임 상태 조회/업데이트용 HTTP API 호출"
     
     def __init__(self, base_url: str = "http://localhost:8000"):
         super().__init__()

@@ -1,38 +1,53 @@
 from langchain.tools import BaseTool
-from langchain.vectorstores import FAISS
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.docstore.document import Document
 import os
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Type, ClassVar
 import logging
 
 logger = logging.getLogger(__name__)
 
-# 환경변수에서 API 키 가져오기 (없으면 기본값 사용)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "your-api-key-here")
+# 환경변수에서 API 키 가져오기
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "your-api-key-here")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
 
 class VectorRetrievalTool(BaseTool):
-    name = "vector_search"
-    description = "게임 공략 및 어드바이스 검색용 벡터 검색"
+    name: str = "vector_search"
+    description: str = "게임 공략 및 어드바이스 검색용 벡터 검색"
+    
+    # Pydantic을 위한 인스턴스 필드 선언
+    index_path: str
+    embeddings: Any
+    vector_store: Optional[Any] = None
+    game_data: Dict[str, List[Dict[str, Any]]]
     
     def __init__(self, index_path: str = "./vector_data"):
-        super().__init__()
-        self.index_path = index_path
-        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-        self.vector_store = None
+        embeddings = GoogleGenerativeAIEmbeddings(
+            google_api_key=GOOGLE_API_KEY,
+            model='models/embedding-001'
+        )
         
-        # 사전 정의된 게임 데이터 (실제로는 문서로부터 로드)
-        self.game_data = {
+        game_data = {
             "units": self._load_unit_data(),
             "buildings": self._load_building_data(),
             "technologies": self._load_technology_data(),
             "eras": self._load_era_data()
         }
-        
-        # 벡터 스토어 초기화
+
+        # Pydantic 모델 생성자에 필요한 값 전달
+        super().__init__(
+            index_path=index_path,
+            embeddings=embeddings,
+            game_data=game_data
+        )
+
+        self.embeddings = embeddings
+        self.vector_store = None
+        self.game_data = game_data
         self._initialize_vector_store()
-    
+
     def _initialize_vector_store(self):
         """벡터 스토어 초기화"""
         try:
@@ -40,7 +55,8 @@ class VectorRetrievalTool(BaseTool):
             if os.path.exists(f"{self.index_path}/index.faiss"):
                 self.vector_store = FAISS.load_local(
                     self.index_path,
-                    self.embeddings
+                    self.embeddings,
+                    allow_dangerous_deserialization=True
                 )
                 logger.info(f"기존 FAISS 인덱스를 로드했습니다: {self.index_path}")
             else:
@@ -487,3 +503,4 @@ class VectorRetrievalTool(BaseTool):
                 "description": "컴퓨터와 인터넷, 우주 탐사"
             }
         ] 
+    

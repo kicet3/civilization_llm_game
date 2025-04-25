@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 from pydantic import BaseModel, Field
+from core.agents.chat_agent import chat_agent
 
 router = APIRouter()
 
@@ -205,8 +206,40 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_id: str)
                 
                 # 메시지 타입에 따라 다르게 처리
                 if message_type == MessageType.CHAT:
-                    # 채팅 메시지는 모든 플레이어에게 전송
-                    await manager.broadcast(game_id, message)
+                    # 채팅 메시지일 경우 LLM 에이전트에 처리 요청
+                    user_message = content.get("text", "")
+                    
+                    # 브로드캐스트할 사용자 메시지
+                    user_chat_message = {
+                        "type": MessageType.CHAT,
+                        "player_id": player_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "content": content
+                    }
+                    
+                    # 사용자 메시지 먼저 브로드캐스트
+                    await manager.broadcast(game_id, user_chat_message)
+                    
+                    # AI 응답 생성 요청
+                    ai_response = await chat_agent.process_chat(game_id, player_id, user_message)
+                    
+                    # AI 응답 메시지 객체 생성
+                    ai_message = {
+                        "type": MessageType.CHAT,
+                        "player_id": "ai_advisor",  # AI 어드바이저 ID
+                        "timestamp": datetime.now().isoformat(),
+                        "content": {
+                            "text": ai_response,
+                            "is_ai": True
+                        }
+                    }
+                    
+                    # 메시지 히스토리에 AI 응답 추가
+                    if game_id in manager.message_history:
+                        manager.message_history[game_id].append(ai_message)
+                    
+                    # AI 응답 브로드캐스트
+                    await manager.broadcast(game_id, ai_message)
                     
                 elif message_type == MessageType.UNIT_MOVE:
                     # 유닛 이동 메시지
