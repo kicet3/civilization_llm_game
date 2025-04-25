@@ -1,105 +1,110 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
-from typing import Dict, List, Any, Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from typing import Dict, List, Any
 from datetime import datetime
 import json
 from pydantic import BaseModel, Field
+import uuid
 
 router = APIRouter()
 
 # 웹소켓 연결 관리자
 class ConnectionManager:
     def __init__(self):
-        # 활성화된 연결을 저장 {game_id: {player_id: WebSocket}}
-        self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
-        # 각 게임의 메시지 히스토리 저장
-        self.message_history: Dict[str, List[Dict[str, Any]]] = {}
+        # 활성화된 연결을 저장 {connection_id: WebSocket}
+        self.active_connections: Dict[str, WebSocket] = {}
+        # 메시지 히스토리 저장
+        self.message_history: List[Dict[str, Any]] = []
+        # 최대 히스토리 길이
+        self.max_history_size = 100
         
-    async def connect(self, websocket: WebSocket, game_id: str, player_id: str):
+    async def connect(self, websocket: WebSocket) -> str:
         """새로운 WebSocket 연결 추가"""
         await websocket.accept()
         
-        # 게임 ID에 해당하는 딕셔너리가 없으면 생성
-        if game_id not in self.active_connections:
-            self.active_connections[game_id] = {}
-            self.message_history[game_id] = []
-            
-        # 해당 플레이어 ID로 웹소켓 저장
-        self.active_connections[game_id][player_id] = websocket
+        # 고유한 연결 ID 생성
+        connection_id = str(uuid.uuid4())
         
-        # 접속 메시지 생성 및 브로드캐스트
+        # 연결 저장
+        self.active_connections[connection_id] = websocket
+        
+        # 접속 메시지 생성
         connection_msg = {
-            "type": "player_connected",
-            "player_id": player_id,
+            "type": "connected",
+            "sender": "system",
             "timestamp": datetime.now().isoformat(),
-            "content": f"Player {player_id} connected to game {game_id}"
+            "content": {
+                "text": "서버에 연결되었습니다.",
+                "connection_id": connection_id
+            }
         }
         
         # 접속 히스토리에 저장
-        self.message_history[game_id].append(connection_msg)
+        self.add_to_history(connection_msg)
         
-        # 해당 게임의 모든 플레이어에게 접속 알림
-        await self.broadcast(game_id, connection_msg)
+        # 연결된 클라이언트에게 접속 알림 및 연결 ID 전송
+        await self.send_personal_message(connection_msg, websocket)
         
-        # 접속한 플레이어에게 이전 메시지 히스토리 전송
-        await self.send_history(websocket, game_id)
+        # 해당 클라이언트에게 이전 메시지 히스토리 전송
+        await self.send_history(websocket)
+        
+        return connection_id
     
-    async def disconnect(self, game_id: str, player_id: str):
+    async def disconnect(self, connection_id: str):
         """WebSocket 연결 제거"""
-        if game_id in self.active_connections and player_id in self.active_connections[game_id]:
+        if connection_id in self.active_connections:
             # 연결 종료 메시지 생성
             disconnect_msg = {
-                "type": "player_disconnected",
-                "player_id": player_id,
+                "type": "disconnected",
+                "sender": "system",
                 "timestamp": datetime.now().isoformat(),
-                "content": f"Player {player_id} disconnected from game {game_id}"
+                "content": {
+                    "text": "연결이 종료되었습니다.",
+                    "connection_id": connection_id
+                }
             }
             
             # 히스토리에 저장
-            if game_id in self.message_history:
-                self.message_history[game_id].append(disconnect_msg)
+            self.add_to_history(disconnect_msg)
             
-            # 먼저 웹소켓 참조 저장 후 삭제
-            try:
-                # 다른 사람들에게 알리고
-                await self.broadcast_except_sender(game_id, player_id, disconnect_msg)
-            except Exception as e:
-                print(f"Error broadcasting disconnect message: {str(e)}")
+            # 다른 모든 클라이언트에게 알림
+            await self.broadcast_except_sender(connection_id, disconnect_msg)
             
-            # 유저 연결 삭제
-            del self.active_connections[game_id][player_id]
-            
-            # 게임에 더 이상 연결된 플레이어가 없으면 게임 정보 삭제
-            if not self.active_connections[game_id]:
-                del self.active_connections[game_id]
-                if game_id in self.message_history:
-                    del self.message_history[game_id]
+            # 연결 삭제
+            del self.active_connections[connection_id]
     
     async def send_personal_message(self, message: Dict[str, Any], websocket: WebSocket):
         """특정 웹소켓 연결에만 메시지 전송"""
         await websocket.send_text(json.dumps(message))
     
-    async def broadcast(self, game_id: str, message: Dict[str, Any]):
-        """게임에 연결된 모든, 플레이어에게 메시지 브로드캐스트"""
-        if game_id in self.active_connections:
-            for player_websocket in self.active_connections[game_id].values():
-                await player_websocket.send_text(json.dumps(message))
+    async def broadcast(self, message: Dict[str, Any]):
+        """모든 연결에 메시지 브로드캐스트"""
+        for connection in self.active_connections.values():
+            await connection.send_text(json.dumps(message))
     
-    async def broadcast_except_sender(self, game_id: str, sender_id: str, message: Dict[str, Any]):
-        """송신자를 제외한 모든 플레이어에게 메시지 브로드캐스트"""
-        if game_id in self.active_connections:
-            for player_id, websocket in self.active_connections[game_id].items():
-                if player_id != sender_id:
-                    await websocket.send_text(json.dumps(message))
+    async def broadcast_except_sender(self, sender_id: str, message: Dict[str, Any]):
+        """송신자를 제외한 모든 연결에 메시지 브로드캐스트"""
+        for conn_id, websocket in self.active_connections.items():
+            if conn_id != sender_id:
+                await websocket.send_text(json.dumps(message))
     
-    async def send_history(self, websocket: WebSocket, game_id: str):
+    async def send_history(self, websocket: WebSocket):
         """연결된 클라이언트에게 메시지 히스토리 전송"""
-        if game_id in self.message_history:
-            history_message = {
-                "type": "message_history",
-                "timestamp": datetime.now().isoformat(),
-                "messages": self.message_history[game_id]
+        history_message = {
+            "type": "message_history",
+            "sender": "system",
+            "timestamp": datetime.now().isoformat(),
+            "content": {
+                "messages": self.message_history
             }
-            await websocket.send_text(json.dumps(history_message))
+        }
+        await websocket.send_text(json.dumps(history_message))
+    
+    def add_to_history(self, message: Dict[str, Any]):
+        """메시지를 히스토리에 추가하고 최대 크기 관리"""
+        self.message_history.append(message)
+        # 히스토리 사이즈 제한
+        if len(self.message_history) > self.max_history_size:
+            self.message_history = self.message_history[-self.max_history_size:]
 
 # 웹소켓 연결 관리자 인스턴스 생성
 manager = ConnectionManager()
@@ -117,70 +122,26 @@ class MessageType:
 # 웹소켓 전송용 메시지 모델
 class WebSocketMessage(BaseModel):
     type: str
-    game_id: str
-    player_id: str
+    sender: str = "system"
     content: Dict[str, Any]
     timestamp: datetime = Field(default_factory=datetime.now)
 
-@router.websocket("/ws/{game_id}/{player_id}")
-async def websocket_endpoint(websocket: WebSocket, game_id: str, player_id: str):
+# 메인 웹소켓 엔드포인트
+@router.websocket("")
+async def websocket_endpoint(websocket: WebSocket):
     """웹소켓 연결 엔드포인트"""
+    connection_id = None
+    
     try:
-        # 연결 성공 여부를 검사하지 않고 무조건 accept
-        await websocket.accept()
-        
-        # 게임 ID 검증 로직 추가 (필요한 경우)
-        # 간단한 검증: 게임 ID는 UUID 형식(36자)
-        if len(game_id) != 36 and not game_id.startswith("test_"):
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "Invalid game ID format"
-            }))
-            await websocket.close()
-            return
-            
-        # 플레이어 ID 검증 로직 (필요한 경우)
-        # 길이 체크 등 간단한 검증
-        if len(player_id) < 5:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": "Invalid player ID format"
-            }))
-            await websocket.close()
-            return
-            
-        # 검증 통과 후 ConnectionManager에 연결 추가
-        if game_id not in manager.active_connections:
-            manager.active_connections[game_id] = {}
-            manager.message_history[game_id] = []
-            
-        # 해당 플레이어 ID로 웹소켓 저장
-        manager.active_connections[game_id][player_id] = websocket
-        
-        # 접속 메시지 생성 및 브로드캐스트
-        connection_msg = {
-            "type": "player_connected",
-            "player_id": player_id,
-            "timestamp": datetime.now().isoformat(),
-            "content": f"Player {player_id} connected to game {game_id}"
-        }
-        
-        # 접속 히스토리에 저장
-        manager.message_history[game_id].append(connection_msg)
-        
-        # 해당 게임의 모든 플레이어에게 접속 알림
-        await manager.broadcast(game_id, connection_msg)
-        
-        # 접속한 플레이어에게 이전 메시지 히스토리 전송
-        await manager.send_history(websocket, game_id)
+        # 연결 수락 및 고유 ID 생성
+        connection_id = await manager.connect(websocket)
         
         while True:
-            # 클라이언트로부터 메시지 수신 (ping/pong도 처리)
+            # 클라이언트로부터 메시지 수신
             data = await websocket.receive_text()
             
             # ping 메시지 처리
             if data == "ping":
-                # pong 응답
                 await websocket.send_text("pong")
                 continue
                 
@@ -190,104 +151,123 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, player_id: str)
                 # 타입, 내용 확인
                 message_type = message_data.get("type", "")
                 content = message_data.get("content", {})
+                sender = message_data.get("sender", connection_id)
                 
                 # 메시지 객체 생성
                 message = {
                     "type": message_type,
-                    "player_id": player_id,
-                    "timestamp": datetime.now().isoformat(),
+                    "sender": sender,
+                    "timestamp": message_data.get("timestamp", datetime.now().isoformat()),
                     "content": content
                 }
                 
                 # 메시지 히스토리에 저장
-                if game_id in manager.message_history:
-                    manager.message_history[game_id].append(message)
+                manager.add_to_history(message)
                 
                 # 메시지 타입에 따라 다르게 처리
                 if message_type == MessageType.CHAT:
-                    # 채팅 메시지는 모든 플레이어에게 전송
-                    await manager.broadcast(game_id, message)
-                    
-                elif message_type == MessageType.UNIT_MOVE:
-                    # 유닛 이동 메시지
-                    unit_id = content.get("unit_id")
-                    to_q = content.get("to_q")
-                    to_r = content.get("to_r")
-                    to_s = content.get("to_s")
-                    
-                    if unit_id and to_q is not None and to_r is not None and to_s is not None:
-                        # 게임 로직에 따른 유닛 이동 처리
-                        # TODO: 실제 게임 로직과 연결
+                    # 채팅 메시지는 모든 연결에 전송
+                    # AI 응답 생성
+                    if sender == "user" or sender == connection_id:
+                        # 먼저 타이핑 표시
+                        typing_message = {
+                            "type": "typing",
+                            "sender": "ai_advisor",
+                            "timestamp": datetime.now().isoformat(),
+                            "content": {
+                                "is_typing": True
+                            }
+                        }
+                        await manager.broadcast(typing_message)
                         
-                        # 이동 결과를 모든 플레이어에게 브로드캐스트
-                        await manager.broadcast(game_id, message)
+                        # AI 응답 메시지 생성 (예시)
+                        ai_response = {
+                            "type": "chat",
+                            "sender": "ai_advisor",
+                            "timestamp": datetime.now().isoformat(),
+                            "content": {
+                                "text": f"당신의 메시지 '{content.get('text', '')}'에 대한 응답입니다.",
+                                "is_ai": True
+                            }
+                        }
+                        
+                        # 약간의 지연 시간 후 응답 (타이핑 효과)
+                        import asyncio
+                        await asyncio.sleep(1)
+                        
+                        # AI 응답 저장 및 브로드캐스트
+                        manager.add_to_history(ai_response)
+                        await manager.broadcast(ai_response)
+                    else:
+                        # 일반 채팅 메시지 브로드캐스트
+                        await manager.broadcast(message)
                 
-                elif message_type == MessageType.TURN_END:
-                    # 턴 종료 메시지는 시스템 처리 후 모든 플레이어에게 전송
-                    # TODO: 턴 종료 로직 구현
-                    
-                    # 턴 종료를 모든 플레이어에게 알림
-                    await manager.broadcast(game_id, message)
+                elif message_type in [MessageType.UNIT_MOVE, MessageType.TURN_END, MessageType.GAME_ACTION]:
+                    # 게임 액션 브로드캐스트
+                    await manager.broadcast(message)
                 
                 else:
-                    # 기타 게임 액션
-                    await manager.broadcast(game_id, message)
+                    # 기타 메시지 처리
+                    await manager.broadcast(message)
                 
             except json.JSONDecodeError:
                 # JSON 형식이 아닌 경우 에러 메시지 전송 (ping은 제외)
                 if data != "ping":
                     error_message = {
                         "type": "error",
-                        "player_id": "system",
+                        "sender": "system",
                         "timestamp": datetime.now().isoformat(),
-                        "content": {"error": "Invalid message format. JSON expected."}
+                        "content": {"error": "유효하지 않은 메시지 형식입니다. JSON이 필요합니다."}
                     }
                     await manager.send_personal_message(error_message, websocket)
                 
     except WebSocketDisconnect:
         # 연결이 끊어진 경우 처리
-        if game_id in manager.active_connections and player_id in manager.active_connections[game_id]:
-            await manager.disconnect(game_id, player_id)
+        if connection_id and connection_id in manager.active_connections:
+            await manager.disconnect(connection_id)
+    
     except Exception as e:
         # 기타 예외 처리
-        print(f"WebSocket error: {str(e)}")
+        print(f"WebSocket 오류: {str(e)}")
         try:
-            if game_id in manager.active_connections and player_id in manager.active_connections[game_id]:
-                await manager.disconnect(game_id, player_id)
+            if connection_id and connection_id in manager.active_connections:
+                await manager.disconnect(connection_id)
         except:
             pass
 
-# 게임 이벤트 수동 전송 엔드포인트 (서버에서 이벤트 발생 시 사용)
-@router.post("/game/{game_id}/event")
-async def send_game_event(game_id: str, event: WebSocketMessage):
-    """게임 이벤트를 웹소켓을 통해 전송"""
+# 연결 정보 조회 엔드포인트
+@router.get("/connections")
+async def get_connections():
+    """현재 웹소켓에 연결된 클라이언트 정보 조회"""
+    connection_count = len(manager.active_connections)
+    connection_ids = list(manager.active_connections.keys())
+    
+    return {
+        "status": "success",
+        "total_connections": connection_count,
+        "connection_ids": connection_ids,
+        "last_message_time": datetime.now().isoformat()
+    }
+
+# 이벤트 전송 엔드포인트
+@router.post("/event")
+async def send_event(event: WebSocketMessage):
+    """웹소켓을 통해 이벤트 메시지 전송"""
     message = {
         "type": event.type,
-        "player_id": event.player_id,
+        "sender": event.sender,
         "timestamp": event.timestamp.isoformat(),
         "content": event.content
     }
     
     # 메시지 히스토리에 저장
-    if game_id in manager.message_history:
-        manager.message_history[game_id].append(message)
+    manager.add_to_history(message)
     
-    # 모든 플레이어에게 브로드캐스트
-    await manager.broadcast(game_id, message)
+    # 모든 클라이언트에게 브로드캐스트
+    await manager.broadcast(message)
     
-    return {"status": "success", "message": "Event broadcast successfully"}
-
-# 게임 정보 조회 엔드포인트
-@router.get("/game/{game_id}/connections")
-async def get_game_connections(game_id: str):
-    """현재 게임에 연결된 플레이어 정보 조회"""
-    if game_id not in manager.active_connections:
-        return {"status": "not_found", "message": "Game not found"}
-    
-    connected_players = list(manager.active_connections[game_id].keys())
     return {
         "status": "success", 
-        "game_id": game_id,
-        "connected_players": connected_players,
-        "total_connections": len(connected_players)
-    } 
+        "message": "이벤트가 성공적으로 브로드캐스트되었습니다.",
+        "recipients": len(manager.active_connections)
+    }
