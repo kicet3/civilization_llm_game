@@ -408,7 +408,7 @@ export default function GameChatPage() {
       </div>
       
       <div className="message-text whitespace-pre-wrap">
-        {msg.content.text}
+        {msg.content.text ?? JSON.stringify(msg.content)}
       </div>
     </div>
   );
