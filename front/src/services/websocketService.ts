@@ -3,7 +3,7 @@ import llmService from './llmService';
 
 export interface ChatMessage {
   type: string;
-  player_id: string;
+  sender?: string;
   timestamp: string;
   content: any;
 }
@@ -22,24 +22,20 @@ class WebSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 3000;
-  private gameId: string | null = null;
-  private playerId: string | null = null;
   private useLLMFallback = false; // LLM 폴백을 사용할지 여부
   
-  // 웹소켓 연결 생성
-  connect(gameId: string, playerId: string, callbacks: WebSocketCallbacks = {}, useLLMFallback = true) {
-    this.gameId = gameId;
-    this.playerId = playerId;
+  // 웹소켓 연결 생성 - 게임ID와 플레이어ID 없이 통신
+  connect(callbacks: WebSocketCallbacks = {}, useLLMFallback = true) {
     this.callbacks = callbacks;
     this.useLLMFallback = useLLMFallback;
     
     // 기존 연결 종료
     this.disconnect();
     
-    // 새 웹소켓 연결 생성
+    // 새 웹소켓 연결 생성 - 단순히 /ws 엔드포인트로 연결
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/${gameId}/${playerId}`;
+    const wsUrl = `${protocol}//${host}/ws`;
     
     try {
       this.socket = new WebSocket(wsUrl);
@@ -89,7 +85,9 @@ class WebSocketService {
     
     const message = {
       type,
-      content
+      sender: 'user',
+      content,
+      timestamp: new Date().toISOString()
     };
     
     this.socket.send(JSON.stringify(message));
@@ -104,7 +102,7 @@ class WebSocketService {
       // 사용자 메시지 생성
       const userMessage: ChatMessage = {
         type: 'chat',
-        player_id: this.playerId || 'player',
+        sender: 'user',
         timestamp: new Date().toISOString(),
         content: {
           text: text
@@ -119,7 +117,7 @@ class WebSocketService {
       // AI 응답 처리 중 표시
       const typingMessage: ChatMessage = {
         type: 'typing',
-        player_id: 'ai_advisor',
+        sender: 'ai_advisor',
         timestamp: new Date().toISOString(),
         content: {
           is_typing: true
@@ -147,7 +145,7 @@ class WebSocketService {
       // AI 응답 메시지 생성
       const aiMessage: ChatMessage = {
         type: 'chat',
-        player_id: 'ai_advisor',
+        sender: 'ai_advisor',
         timestamp: new Date().toISOString(),
         content: {
           text: response.text,
@@ -166,7 +164,7 @@ class WebSocketService {
       // 오류 메시지 전송
       const errorMessage: ChatMessage = {
         type: 'error',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '메시지 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
@@ -245,7 +243,7 @@ class WebSocketService {
     if (this.useLLMFallback) {
       const systemMessage: ChatMessage = {
         type: 'system',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '서버 연결이 끊겼습니다. 오프라인 모드에서 계속 대화할 수 있습니다.'
@@ -264,11 +262,9 @@ class WebSocketService {
       console.log(`재연결 시도 ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
       
       setTimeout(() => {
-        if (this.gameId && this.playerId) {
-          // 콜백은 유지하되 새로운 연결 시도
-          const existingCallbacks = this.callbacks;
-          this.connect(this.gameId, this.playerId, existingCallbacks, this.useLLMFallback);
-        }
+        // 콜백은 유지하되 새로운 연결 시도
+        const existingCallbacks = this.callbacks;
+        this.connect(existingCallbacks, this.useLLMFallback);
       }, this.reconnectInterval);
     }
     
@@ -282,11 +278,16 @@ class WebSocketService {
   private handleError(event: Event) {
     console.error('웹소켓 에러:', event);
     
+    // 추가 디버깅 정보 제공
+    if (this.socket) {
+      console.debug('소켓 상태:', this.socket.readyState);
+    }
+    
     // 폴백 모드를 사용하는 경우 시스템 메시지 표시
     if (this.useLLMFallback) {
       const systemMessage: ChatMessage = {
         type: 'system',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '서버 연결에 문제가 발생했습니다. 오프라인 모드에서 계속 대화할 수 있습니다.'
@@ -312,7 +313,7 @@ class WebSocketService {
     if (this.useLLMFallback) {
       const systemMessage: ChatMessage = {
         type: 'system',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '서버에 연결할 수 없습니다. 오프라인 모드에서 대화할 수 있습니다.'

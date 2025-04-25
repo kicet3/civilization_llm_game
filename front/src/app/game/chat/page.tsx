@@ -12,32 +12,25 @@ export default function GameChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // URL 파라미터에서 게임 ID와 플레이어 ID 가져오기
+  // URL 파라미터에서 게임 ID 가져오기 (라우팅용)
   const gameId = searchParams.get('gameId') || '';
-  const playerId = searchParams.get('playerId') || '';
   
   const [message, setMessage] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
-  const [offlineMode, setOfflineMode] = useState(false); // 오프라인 모드 상태
+  const [offlineMode, setOfflineMode] = useState(false);
   
-  const ws = useRef<typeof websocketService | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // 웹소켓 연결 설정
   useEffect(() => {
-    if (!gameId || !playerId) {
-      setError('게임 ID와 플레이어 ID가 필요합니다.');
-      return;
-    }
-    
-    // 초기 시스템 메시지 추가
+    // 초기 환영 메시지
     setChatMessages([
       {
         type: 'system',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '채팅 게임 모드에 오신 것을 환영합니다. 어드바이저와 대화하며 게임을 진행할 수 있습니다.'
@@ -48,7 +41,7 @@ export default function GameChatPage() {
     // LLM 서비스 초기화 (폴백용)
     initializeLLMService();
     
-    // 웹소켓 연결
+    // 웹소켓 메시지 핸들러
     const handleWebSocketMessage = (message: ChatMessage) => {
       console.log('수신된 메시지:', message);
       
@@ -59,23 +52,33 @@ export default function GameChatPage() {
       }
       
       // AI가 응답 중일 때 타이핑 표시 제거
-      if (message.player_id === 'ai_advisor' && message.content.is_ai) {
+      if (message.sender === 'ai_advisor' && message.content.is_ai) {
         setIsTyping(false);
       }
       
       // 시스템 메시지 처리
       if (message.type === 'system') {
         // 오프라인 모드 관련 메시지인 경우 상태 업데이트
-        if (message.content.text.includes('오프라인 모드')) {
+        if (message.content.text && typeof message.content.text === 'string' && 
+            message.content.text.includes('오프라인 모드')) {
           setOfflineMode(true);
         }
       }
       
       // 메시지 목록에 추가
-      setChatMessages(prev => [...prev, message]);
+      if (message.type !== 'message_history') {
+        setChatMessages(prev => [...prev, message]);
+      } else if (message.content.messages && Array.isArray(message.content.messages)) {
+        // 히스토리 메시지인 경우 모든 메시지를 추가
+        setChatMessages(prev => {
+          // 시스템 메시지만 유지
+          const systemMessages = prev.filter(msg => msg.type === 'system' && msg.sender === 'system');
+          return [...systemMessages, ...message.content.messages];
+        });
+      }
     };
     
-    // 웹소켓 연결 성공 처리
+    // 웹소켓 연결 성공 핸들러
     const handleWebSocketOpen = () => {
       console.log('웹소켓 연결 성공');
       setConnected(true);
@@ -85,7 +88,7 @@ export default function GameChatPage() {
       // 연결 성공 메시지 추가
       setChatMessages(prev => [...prev, {
         type: 'system',
-        player_id: 'system',
+        sender: 'system',
         timestamp: new Date().toISOString(),
         content: {
           text: '채팅 서버에 연결되었습니다. 이제 명령을 입력할 수 있습니다.'
@@ -93,7 +96,7 @@ export default function GameChatPage() {
       }]);
     };
     
-    // 웹소켓 연결 종료 처리
+    // 웹소켓 연결 종료 핸들러
     const handleWebSocketClose = (event: CloseEvent) => {
       console.log('웹소켓 연결 종료:', event.code, event.reason);
       setConnected(false);
@@ -104,7 +107,7 @@ export default function GameChatPage() {
       }
     };
     
-    // 웹소켓 에러 처리
+    // 웹소켓 에러 핸들러
     const handleWebSocketError = (event: Event) => {
       console.error('웹소켓 에러:', event);
       setConnected(false);
@@ -115,10 +118,8 @@ export default function GameChatPage() {
       }
     };
     
-    // 웹소켓 서비스 초기화 및 연결
-    ws.current = websocketService.connect(
-      gameId,
-      playerId,
+    // 웹소켓 연결
+    websocketService.connect(
       {
         onOpen: handleWebSocketOpen,
         onMessage: handleWebSocketMessage,
@@ -130,21 +131,21 @@ export default function GameChatPage() {
     
     // 컴포넌트 언마운트 시 웹소켓 연결 종료
     return () => {
-      if (ws.current) {
-        websocketService.disconnect();
-      }
+      websocketService.disconnect();
     };
-  }, [gameId, playerId]);
+  }, []);
   
   // LLM 서비스 초기화
   const initializeLLMService = async () => {
     try {
-      // 게임 상태 정보 가져오기
-      const gameState = await gameService.getGameState().catch(() => null);
-      
-      // 게임 상태 정보가 있으면 LLM 서비스에 업데이트
-      if (gameState) {
-        llmService.updateGameContext(gameState);
+      // 게임 상태 정보 가져오기 (게임 ID가 있는 경우)
+      if (gameId) {
+        const gameState = await gameService.getGameState().catch(() => null);
+        
+        // 게임 상태 정보가 있으면 LLM 서비스에 업데이트
+        if (gameState) {
+          llmService.updateGameContext(gameState);
+        }
       }
     } catch (error) {
       console.error('LLM 서비스 초기화 오류:', error);
@@ -167,6 +168,18 @@ export default function GameChatPage() {
       const userMessage = message.trim();
       setMessage(''); // 입력창 초기화
       
+      // 사용자 메시지 미리 추가
+      const userMessageObj: ChatMessage = {
+        type: 'chat',
+        sender: 'user',
+        timestamp: new Date().toISOString(),
+        content: {
+          text: userMessage
+        }
+      };
+      
+      setChatMessages(prev => [...prev, userMessageObj]);
+      
       // 웹소켓 서비스를 통해 메시지 전송
       await websocketService.sendChatMessage(userMessage);
     } catch (error) {
@@ -177,7 +190,7 @@ export default function GameChatPage() {
         ...prev,
         {
           type: 'error',
-          player_id: 'system',
+          sender: 'system',
           timestamp: new Date().toISOString(),
           content: {
             text: '메시지 전송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
@@ -189,68 +202,64 @@ export default function GameChatPage() {
   
   // 서버 재연결 시도
   const handleReconnect = () => {
-    if (ws.current && gameId && playerId) {
-      // 기존 연결 해제 후 재연결
-      websocketService.disconnect();
-      
-      // 재연결 메시지 표시
-      setChatMessages(prev => [
-        ...prev,
-        {
-          type: 'system',
-          player_id: 'system',
-          timestamp: new Date().toISOString(),
-          content: {
-            text: '서버에 재연결을 시도합니다...'
-          }
+    // 재연결 메시지 표시
+    setChatMessages(prev => [
+      ...prev,
+      {
+        type: 'system',
+        sender: 'system',
+        timestamp: new Date().toISOString(),
+        content: {
+          text: '서버에 재연결을 시도합니다...'
         }
-      ]);
-      
-      // 웹소켓 재연결
-      websocketService.connect(
-        gameId,
-        playerId,
-        {
-          onOpen: () => {
-            setConnected(true);
-            setOfflineMode(false);
-            setError(null);
-            
-            setChatMessages(prev => [...prev, {
-              type: 'system',
-              player_id: 'system',
-              timestamp: new Date().toISOString(),
-              content: {
-                text: '채팅 서버에 성공적으로 재연결되었습니다.'
-              }
-            }]);
-          },
-          onMessage: (message) => {
-            console.log('수신된 메시지:', message);
-            
-            if (message.type === 'typing') {
-              setIsTyping(message.content.is_typing || false);
-              return;
+      }
+    ]);
+    
+    // 기존 연결 해제
+    websocketService.disconnect();
+    
+    // 웹소켓 재연결
+    websocketService.connect(
+      {
+        onOpen: () => {
+          setConnected(true);
+          setOfflineMode(false);
+          setError(null);
+          
+          setChatMessages(prev => [...prev, {
+            type: 'system',
+            sender: 'system',
+            timestamp: new Date().toISOString(),
+            content: {
+              text: '채팅 서버에 성공적으로 재연결되었습니다.'
             }
-            
-            if (message.player_id === 'ai_advisor' && message.content.is_ai) {
-              setIsTyping(false);
-            }
-            
-            setChatMessages(prev => [...prev, message]);
-          },
-          onClose: () => {
-            setConnected(false);
-            setError('서버와의 연결이 종료되었습니다. 오프라인 모드로 전환되었습니다.');
-          },
-          onError: () => {
-            setConnected(false);
-            setError('서버 연결 중 오류가 발생했습니다. 오프라인 모드로 전환되었습니다.');
-          }
+          }]);
         },
-        true
-      );
-    }
+        onMessage: (message) => {
+          console.log('수신된 메시지:', message);
+          
+          if (message.type === 'typing') {
+            setIsTyping(message.content.is_typing || false);
+            return;
+          }
+          
+          if (message.sender === 'ai_advisor' && message.content.is_ai) {
+            setIsTyping(false);
+          }
+          
+          setChatMessages(prev => [...prev, message]);
+        },
+        onClose: () => {
+          setConnected(false);
+          setError('서버와의 연결이 종료되었습니다. 오프라인 모드로 전환되었습니다.');
+        },
+        onError: () => {
+          setConnected(false);
+          setError('서버 연결 중 오류가 발생했습니다. 오프라인 모드로 전환되었습니다.');
+        }
+      },
+      true
+    );
   };
   
   // 시간 포맷팅 함수
@@ -271,6 +280,14 @@ export default function GameChatPage() {
   // 에러 알림 닫기
   const closeError = () => {
     setError(null);
+  };
+  
+  // 발신자 이름 표시
+  const getSenderDisplayName = (sender: string) => {
+    if (sender === 'system') return '시스템';
+    if (sender === 'ai_advisor') return '어드바이저';
+    if (sender === 'user') return '나';
+    return sender || '알 수 없음';
   };
   
   return (
@@ -325,8 +342,8 @@ export default function GameChatPage() {
             key={index} 
             className={cn(
               "p-3 rounded-lg max-w-[80%]",
-              msg.player_id === playerId ? "ml-auto bg-indigo-600" :
-              msg.player_id === 'ai_advisor' ? "bg-slate-700" :
+              msg.sender === 'user' ? "ml-auto bg-indigo-600" :
+              msg.sender === 'ai_advisor' ? "bg-slate-700" :
               msg.type === 'system' ? "mx-auto bg-slate-600 text-center max-w-md" :
               msg.type === 'event' ? "mx-auto bg-amber-800 text-center max-w-md" :
               msg.type === 'error' ? "mx-auto bg-red-700 text-center max-w-md" :
@@ -334,16 +351,14 @@ export default function GameChatPage() {
             )}
           >
             <div className="flex items-center mb-1">
-              {msg.player_id === 'ai_advisor' ? (
+              {msg.sender === 'ai_advisor' ? (
                 <Info size={14} className="mr-1 text-blue-400" />
-              ) : msg.player_id === playerId ? (
+              ) : msg.sender === 'user' ? (
                 <User size={14} className="mr-1" />
               ) : null}
               
               <span className="text-xs opacity-70">
-                {msg.player_id === 'ai_advisor' ? '어드바이저' : 
-                 msg.player_id === 'system' ? '시스템' : 
-                 msg.player_id === playerId ? '나' : msg.player_id}
+                {getSenderDisplayName(msg.sender || '')}
               </span>
               
               <span className="text-xs opacity-50 ml-2">
@@ -388,10 +403,7 @@ export default function GameChatPage() {
           />
           <button
             type="submit"
-            className={cn(
-              "p-2 rounded-lg",
-              "bg-indigo-600 hover:bg-indigo-700"
-            )}
+            className="p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700"
           >
             <Send size={20} />
           </button>
