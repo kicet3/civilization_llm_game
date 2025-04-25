@@ -5,31 +5,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { 
   Menu, MessageSquare, Settings, Map, Book, 
-  Beaker, Users, Sword, Award, ChevronUp, 
-  ChevronDown, User, Send, 
+  Beaker, Users, Sword, ChevronDown, User, Send, 
   Home 
 } from 'lucide-react';
 import TurnManager, { TurnPhase } from './TurnManager';
-import CityManagementPanel from "./city-management/CityManagementPanel";
 import ResearchPanel from "./research-management/ResearchPanel";
 import UnitPanel from "./unit-management/UnitPanel";
 import DiplomacyPanel from "./diplomacy-management/DiplomacyPanel";
-import ReligionPanel from "./religion-management/ReligionPanel";
-import PolicyPanel from "./policy-management/PolicyPanel";
 import HexMap from './map-management/HexMap';
 import Toast from './ui/Toast';
 
 // 서비스 API 가져오기
-import gameService, { 
-  GameState, 
-  HexTile, 
-  Unit, 
-  City,
-  ResearchState,
-  PolicyState,
-  ReligionState,
-  DiplomacyState
-} from '@/services/gameService';
+import gameService from '@/services/gameService';
+import { GameState, HexTile, Unit, City } from '@/types/game';
 
 interface LogEntry {
   type: 'system' | 'advisor' | 'event' | 'player';
@@ -53,6 +41,7 @@ export default function GamePage() {
   const playerCiv = searchParams.get('civ') || 'korea';
   const civCount = Number(searchParams.get('civCount')) || 8;
   const gameMode = searchParams.get('mode') || 'medium';
+  const playerName = searchParams.get('playerName') || '지도자';
   
   // 게임 ID 생성
   const gameId = searchParams.get('id') || `new_${Date.now()}`;
@@ -67,7 +56,7 @@ export default function GamePage() {
   const [mapData, setMapData] = useState<HexTile[]>([]);
   const [selectedTile, setSelectedTile] = useState<HexTile | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
-  const [selectedCity, setSelectedCity] = useState<City | null>(null);
+  const [selectedCity, setSelectedCity] = useState<HexTile['city'] | null>(null);
   
   // 턴 관련 상태
   const [turn, setTurn] = useState<number>(1);
@@ -94,48 +83,124 @@ export default function GamePage() {
   
 useEffect(() => {
   const loadGameData = async () => {
+    if (!gameId) return;
+    
     try {
       setIsLoading(true);
+      console.log("게임 데이터 로딩 중...");
       
-      // 초기 게임 상태 설정 (로컬에서 처리)
-      const initialState = {
-        turn: 1,
-        year: -4000,
-        resources: {
-          food: 10,
-          production: 5,
-          gold: 20,
-          science: 3,
-          culture: 2,
-          faith: 1,
-          happiness: 10
-        },
-        cities: [],
-        units: []
-      };
+      // 리서치 데이터 불러오기
+      await loadResearchData();
       
-      setGameState(initialState);
-      setTurn(initialState.turn);
-      setYear(initialState.year);
+      // 맵 데이터 불러오기
+      const mapResult = await gameService.getMap();
+      console.log("맵 데이터 로드 완료:", mapResult);
+      setMapData(mapResult.hexagons);
       
-      // 맵 데이터만 가져오기
-      const { hexagons } = await gameService.getMap();
-      setMapData(hexagons);
+      // 게임의 현재 턴과 상태 불러오기
+      const gameState = await gameService.getGameState();
+      if (gameState) {
+        console.log("게임 상태 로드 완료:", gameState);
+        setTurn(gameState.turn);
+        setYear(gameState.year);
+        
+        // 다른 게임 상태 변수 설정
+        setGameState(gameState);
+        setSelectedCity(gameState.cities.length > 0 ? gameState.cities[0] : null);
+      }
       
-      // 초기 로그 메시지
-      addLog('system', '게임이 시작되었습니다.', initialState.turn);
-      addLog('advisor', `새로운 문명의 지도자님, 환영합니다! 이제 우리는 새로운 문명을 건설하여 역사에 이름을 남길 것입니다.`, initialState.turn);
-      
+      console.log("모든 게임 데이터 로딩 완료!");
+    } catch (error) {
+      console.error("게임 데이터 로딩 오류:", error);
+      setError(error instanceof Error ? error.message : '게임 데이터를 로드하는 중 오류가 발생했습니다');
+    } finally {
       setIsLoading(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '게임 데이터 로드 실패');
-      setIsLoading(false);
-      showToast('게임 데이터 로드 실패', 'error');
     }
   };
 
   loadGameData();
-}, [mapType, difficulty, playerCiv, civCount, gameMode]);
+  
+  // 맵 데이터 주기적 업데이트 대신, 필요한 시점에만 업데이트하도록 변경
+  return () => {
+    console.log("게임 페이지 언마운트 - 정리 작업 수행");
+  };
+}, [gameId]);
+  
+  // 리서치 데이터 로드 함수
+  const loadResearchData = async () => {
+    try {
+      console.log("리서치 데이터 로딩 중...");
+      // 여기서는 연구 데이터 로드 로직을 실제 API에 맞게 구현
+      // 실제 API가 있다면 아래 주석을 해제하고 사용
+      // const techData = await researchService.getAvailableTechnologies();
+      // 리서치 데이터 로드 완료 후 처리 로직 추가
+    } catch (error) {
+      console.error("리서치 데이터 로딩 오류:", error);
+      setError(error instanceof Error ? error.message : '리서치 데이터를 로드하는 중 오류가 발생했습니다');
+    }
+  };
+
+  // 게임 데이터 수동 업데이트 함수 - 턴 종료나 중요 이벤트 발생 시 호출
+  const updateGameData = async () => {
+    if (!gameId) return;
+    
+    try {
+      console.log("게임 데이터 수동 업데이트 중...");
+      
+      // 맵 데이터 업데이트
+      const mapResult = await gameService.getMap();
+      console.log("맵 데이터 업데이트 완료");
+      setMapData(mapResult.hexagons);
+      
+      // 게임 상태 업데이트
+      const gameState = await gameService.getGameState();
+      if (gameState) {
+        console.log("게임 상태 업데이트 완료");
+        setTurn(gameState.turn);
+        setYear(gameState.year);
+        setGameState(gameState);
+        setSelectedCity(gameState.cities.length > 0 ? gameState.cities[0] : null);
+      }
+      
+      // 리서치 데이터 업데이트
+      await loadResearchData();
+      
+      console.log("모든 게임 데이터 업데이트 완료!");
+    } catch (error) {
+      console.error("게임 데이터 업데이트 오류:", error);
+      setError(error instanceof Error ? error.message : '게임 데이터를 업데이트하는 중 오류가 발생했습니다');
+      throw error; // 오류를 호출자에게 전파하여 적절히 처리할 수 있도록 함
+    }
+  };
+
+  /**
+   * 턴 종료 처리
+   */
+  const endTurn = async () => {
+    try {
+      console.log("턴 종료 중...");
+      setIsLoading(true);
+      
+      // 서버에 턴 종료 요청
+      const result = await gameService.endTurn();
+      console.log("턴 종료 결과:", result);
+      
+      if (result && result.newState) {
+        // 새 턴 정보 업데이트
+        await updateGameData();
+        
+        showToast(`턴 ${turn}이 종료되었습니다. 새로운 턴이 시작됩니다!`, 'success');
+      } else {
+        console.error("턴 종료 실패");
+        setError('턴 종료 요청이 실패했습니다.');
+      }
+    } catch (error) {
+      console.error("턴 종료 오류:", error);
+      setError(error instanceof Error ? error.message : '턴을 종료하는 중 오류가 발생했습니다');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   // 토스트 메시지 표시
   const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -150,101 +215,87 @@ useEffect(() => {
     setLog(prev => [...prev, { type, content, turn: currentTurn }]);
   }, []);
   
-  // 턴 종료 처리
-  const endTurn = useCallback(async () => {
-    if (!gameState) return;
-    
-    try {
-      setPhase('resolve');
-      addLog('system', `턴 ${turn} 종료! AI 처리 중...`, turn);
-      showToast(`턴 ${turn} 종료! AI 처리 중...`, 'info');
-      
-      // 턴 종료 API 호출
-      const { newState, events } = await gameService.endTurn();
-      
-      // 이벤트 로그에 추가
-      events.forEach(event => {
-        addLog('event', event, turn);
-      });
-      
-      // 게임 상태 업데이트
-      setGameState(newState);
-      setTurn(newState.turn);
-      setYear(newState.year);
-      
-      // 맵 데이터 업데이트
-      const { hexagons } = await gameService.getMap();
-      setMapData(hexagons);
-      
-      // 턴 시작 메시지
-      addLog('system', `턴 ${newState.turn} 시작`, newState.turn);
-      showToast(`턴 ${newState.turn} 시작`, 'success');
-      
-      setPhase('player');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '턴 처리 실패');
-      showToast('턴 처리 실패', 'error');
-      setPhase('player');
+  // 로그가 추가될 때마다 스크롤을 맨 아래로 이동
+  useEffect(() => {
+    const logContainer = document.getElementById('logContainer');
+    if (logContainer) {
+      logContainer.scrollTop = logContainer.scrollHeight;
     }
-  }, [turn, gameState, addLog]);
+  }, [log]);
   
   // 타일 선택 처리
   const handleSelectTile = (tile: HexTile) => {
-    setSelectedTile(tile);
-    
-    // 타일에 있는 유닛 선택
-    if (tile.unit && tile.unit.owner === 'player' && !tile.unit.hasActed) {
-      setSelectedUnit(tile.unit);
-      showToast(`${tile.unit.typeName} 유닛 선택됨`, 'info');
-    } else {
-      setSelectedUnit(null);
+    try {
+      setSelectedTile(tile);
+      
+      // 타일에 있는 유닛 선택
+      if (tile.unit && tile.unit.owner === 'player' && !tile.unit.hasActed) {
+        setSelectedUnit(tile.unit);
+        showToast(`${tile.unit.typeName} 유닛 선택됨`, 'info');
+      } else {
+        setSelectedUnit(null);
+      }
+      
+      // 타일에 있는 도시 선택
+      if (tile.city && tile.city.owner === 'player') {
+        setSelectedCity(tile.city);
+        showToast(`${tile.city.name} 도시 선택됨`, 'info');
+      } else {
+        setSelectedCity(null);
+      }
+      
+      // 정보 패널 업데이트
+      setInfoPanel({
+        open: true,
+        type: 'tile',
+        data: tile
+      });
+    } catch (err) {
+      console.error('타일 선택 중 오류:', err);
+      showToast('타일 선택 중 오류 발생', 'error');
     }
-    
-    // 타일에 있는 도시 선택
-    if (tile.city && tile.city.owner === 'player') {
-      setSelectedCity(tile.city);
-      showToast(`${tile.city.name} 도시 선택됨`, 'info');
-    } else {
-      setSelectedCity(null);
-    }
-    
-    // 정보 패널 업데이트
-    setInfoPanel({
-      open: true,
-      type: 'tile',
-      data: tile
-    });
   };
   
   // 유닛 이동 처리
   const handleUnitMove = (unit: Unit, q: number, r: number) => {
-    // 유닛 이동 후 맵 데이터 업데이트
-    const updatedMapData = mapData.map(tile => {
-      // 원래 위치에서 유닛 제거
-      if (tile.q === unit.location.q && tile.r === unit.location.r) {
-        return { ...tile, unit: null };
-      }
-      // 새 위치에 유닛 배치
-      if (tile.q === q && tile.r === r) {
-        return { ...tile, unit: { ...unit, location: { q, r, s: -q-r } } };
-      }
-      return tile;
-    });
-    
-    setMapData(updatedMapData);
-    
-    // 선택 상태 업데이트
-    const newLocation = { q, r, s: -q-r };
-    const movedUnit = { ...unit, location: newLocation, hasActed: true };
-    setSelectedUnit(movedUnit);
-    
-    // 이동한 타일 찾아서 선택
-    const targetTile = mapData.find(tile => tile.q === q && tile.r === r);
-    if (targetTile) {
-      setSelectedTile({ ...targetTile, unit: movedUnit });
+    if (!mapData || !Array.isArray(mapData) || mapData.length === 0) {
+      console.error('맵 데이터가 없거나 유효하지 않습니다');
+      showToast('맵 데이터 오류로 이동할 수 없습니다', 'error');
+      return;
     }
     
-    addLog('player', `${unit.typeName} 유닛이 이동했습니다`, turn);
+    try {
+      // 유닛 이동 후 맵 데이터 업데이트
+      const updatedMapData = mapData.map(tile => {
+        // 원래 위치에서 유닛 제거
+        if (tile.q === unit.location.q && tile.r === unit.location.r) {
+          return { ...tile, unit: null };
+        }
+        // 새 위치에 유닛 배치
+        if (tile.q === q && tile.r === r) {
+          return { ...tile, unit: { ...unit, location: { q, r, s: -q-r } } };
+        }
+        return tile;
+      });
+      
+      setMapData(updatedMapData);
+      
+      // 선택 상태 업데이트
+      const newLocation = { q, r, s: -q-r };
+      const movedUnit = { ...unit, location: newLocation, hasActed: true };
+      setSelectedUnit(movedUnit);
+      
+      // 이동한 타일 찾아서 선택
+      const targetTile = mapData.find(tile => tile.q === q && tile.r === r);
+      if (targetTile) {
+        setSelectedTile({ ...targetTile, unit: movedUnit });
+      }
+      
+      addLog('player', `${unit.typeName} 유닛이 이동했습니다`, turn);
+    } catch (err) {
+      console.error('유닛 이동 중 오류:', err);
+      showToast('유닛 이동 중 오류 발생', 'error');
+    }
   };
   
   // 유닛 명령 처리
@@ -267,31 +318,6 @@ useEffect(() => {
     }
   };
   
-  // 도시 생산 설정
-  const handleCityProduction = async (cityId: number, item: string) => {
-    try {
-      const { city } = await gameService.setCityProduction(cityId, item);
-      
-      // 게임 상태 업데이트
-      if (gameState) {
-        const updatedCities = gameState.cities.map(c => 
-          c.id === cityId ? city : c
-        );
-        setGameState({ ...gameState, cities: updatedCities });
-      }
-      
-      // 선택된 도시 업데이트
-      if (selectedCity && selectedCity.id === cityId) {
-        setSelectedCity(city);
-      }
-      
-      addLog('player', `${city.name} 도시가 ${item} 생산을 시작했습니다`, turn);
-      showToast(`${item} 생산 시작`, 'success');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : '생산 설정 실패', 'error');
-    }
-  };
-  
   // 명령어 입력 처리
   const handleCommand = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -300,57 +326,108 @@ useEffect(() => {
     // 사용자 메시지 로그 추가
     addLog('player', commandInput, turn);
     
-    // LLM 처리를 대신해 간단한 명령어 처리 로직
-    const command = commandInput.toLowerCase();
-    
-    if (command.includes('턴') || command.includes('다음')) {
-      endTurn();
-    } else if (command.includes('도시') && command.includes('정보')) {
-      if (gameState.cities.length > 0) {
-        addLog('advisor', `현재 당신의 도시는 총 ${gameState.cities.length}개입니다.`, turn);
-        gameState.cities.forEach(city => {
-          addLog('system', `${city.name} (인구: ${city.population}) - 생산: ${city.production} (${city.turnsLeft}턴)`, turn);
-        });
+    try {
+      // LLM 처리를 대신해 간단한 명령어 처리 로직
+      const command = commandInput.toLowerCase();
+      
+      if (command.includes('턴') || command.includes('다음')) {
+        endTurn();
+      } else if (command.includes('도시') && command.includes('정보')) {
+        if (gameState.cities.length > 0) {
+          addLog('advisor', `현재 당신의 도시는 총 ${gameState.cities.length}개입니다.`, turn);
+          gameState.cities.forEach(city => {
+            addLog('system', `${city.name} (인구: ${city.population}) - 생산: ${city.production} (${city.turnsLeft}턴)`, turn);
+          });
+        } else {
+          addLog('advisor', `아직 도시가 없습니다. 정착민을 이용해 첫 도시를 건설하세요.`, turn);
+        }
+      } else if (command.includes('자원')) {
+        const res = gameState.resources;
+        addLog('advisor', `현재 보유 자원: 식량 ${res.food}, 생산력 ${res.production}, 금 ${res.gold}, 과학 ${res.science}, 문화 ${res.culture}, 행복도 ${res.happiness}`, turn);
+      } else if (command.includes('유닛') && command.includes('목록')) {
+        if (gameState.units.length > 0) {
+          addLog('advisor', `현재 보유 유닛은 총 ${gameState.units.length}개입니다.`, turn);
+          gameState.units.forEach(unit => {
+            addLog('system', `${unit.typeName} - 위치: (${unit.location.q}, ${unit.location.r}), 이동력: ${unit.movement}/${unit.maxMovement}`, turn);
+          });
+        } else {
+          addLog('advisor', `보유 중인 유닛이 없습니다.`, turn);
+        }
+      } else if (command.includes('유닛') && command.includes('이동') && selectedUnit) {
+        addLog('advisor', `유닛을 이동하려면 지도에서 목적지를 선택하세요.`, turn);
+      } else if (command.includes('도움말') || command.includes('명령어')) {
+        addLog('advisor', '가능한 명령어: "다음 턴", "도시 정보", "자원 정보", "유닛 목록", "유닛 이동", "건설 [건물명]", "연구 [기술명]"', turn);
       } else {
-        addLog('advisor', `아직 도시가 없습니다. 정착민을 이용해 첫 도시를 건설하세요.`, turn);
-      }
-    } else if (command.includes('자원')) {
-      const res = gameState.resources;
-      addLog('advisor', `현재 보유 자원: 식량 ${res.food}, 생산력 ${res.production}, 금 ${res.gold}, 과학 ${res.science}, 문화 ${res.culture}, 신앙 ${res.faith}, 행복도 ${res.happiness}`, turn);
-    } else if (command.includes('유닛') && command.includes('목록')) {
-      if (gameState.units.length > 0) {
-        addLog('advisor', `현재 보유 유닛은 총 ${gameState.units.length}개입니다.`, turn);
-        gameState.units.forEach(unit => {
-          addLog('system', `${unit.typeName} - 위치: (${unit.location.q}, ${unit.location.r}), 이동력: ${unit.movement}/${unit.maxMovement}`, turn);
-        });
-      } else {
-        addLog('advisor', `보유 중인 유닛이 없습니다.`, turn);
-      }
-    } else if (command.includes('유닛') && command.includes('이동') && selectedUnit) {
-      addLog('advisor', `유닛을 이동하려면 지도에서 목적지를 선택하세요.`, turn);
-    } else if (command.includes('도움말') || command.includes('명령어')) {
-      addLog('advisor', '가능한 명령어: "다음 턴", "도시 정보", "자원 정보", "유닛 목록", "유닛 이동", "건설 [건물명]", "연구 [기술명]"', turn);
-    } else {
-      // 명령어 해석 (실제로는 LLM이 처리할 부분)
-      setTimeout(() => {
-        addLog('advisor', '명령을 처리하는 중입니다...', turn);
-        
-        // 간단한 응답 예시
+        // 명령어 해석 (실제로는 LLM이 처리할 부분)
         setTimeout(() => {
-          const responses = [
-            '당신의 명령을 수행하겠습니다.',
-            '좋은 전략적 선택입니다.',
-            '흥미로운 접근 방식이군요.',
-            '그렇게 하겠습니다. 다른 명령이 있으신가요?',
-            '알겠습니다. 다음 턴에 결과가 반영될 것입니다.'
-          ];
-          const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-          addLog('advisor', randomResponse, turn);
-        }, 1000);
-      }, 500);
+          addLog('advisor', '명령을 처리하는 중입니다...', turn);
+          
+          // 간단한 응답 예시
+          setTimeout(() => {
+            const responses = [
+              '당신의 명령을 수행하겠습니다.',
+              '좋은 전략적 선택입니다.',
+              '흥미로운 접근 방식이군요.',
+              '그렇게 하겠습니다. 다른 명령이 있으신가요?',
+              '알겠습니다. 다음 턴에 결과가 반영될 것입니다.'
+            ];
+            const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+            addLog('advisor', randomResponse, turn);
+          }, 1000);
+        }, 500);
+      }
+    } catch (error) {
+      console.error('명령 처리 중 오류:', error);
+      addLog('system', '명령을 처리하는 도중 오류가 발생했습니다.', turn);
     }
     
     setCommandInput('');
+  };
+  
+  // 현재 선택된 탭에 따른 컴포넌트 렌더링
+  const renderTabContent = () => {
+    try {
+      switch (selectedTab) {
+        case 'map':
+          return (
+            <HexMap 
+              gameId={gameId}
+              onTileClick={handleSelectTile}
+              selectedTile={selectedTile}
+            />
+          );
+        case 'research':
+          return <ResearchPanel updateGameData={updateGameData} />;
+        case 'units':
+          return <UnitPanel />;
+        case 'diplomacy':
+          return (
+            <DiplomacyPanel 
+              mapData={Array.isArray(mapData) ? mapData : []} 
+              playerCivId={playerCiv}
+            />
+          );
+        case 'turn':
+          return (
+            <TurnManager 
+              turn={turn}
+              phase={phase}
+              onEndTurn={endTurn}
+              updateGameData={updateGameData}
+              events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
+            />
+          );
+        default:
+          return <div className="p-4">선택된 탭이 없습니다</div>;
+      }
+    } catch (err) {
+      console.error('탭 렌더링 중 오류:', err);
+      return (
+        <div className="p-4 text-red-400">
+          탭 콘텐츠를 로드하는 중 오류가 발생했습니다. 다른 탭을 선택해보세요.
+        </div>
+      );
+    }
   };
   
   // 로딩 중 화면
@@ -377,55 +454,6 @@ useEffect(() => {
     );
   }
 
-  // 현재 선택된 탭에 따른 컴포넌트 렌더링
-  const renderTabContent = () => {
-    switch (selectedTab) {
-      case 'map':
-        return (
-          <HexMap 
-            gameId={gameId}
-            onTileClick={handleSelectTile}
-            selectedTile={selectedTile}
-            onUnitMove={handleUnitMove}
-          />
-        );
-      case 'cities':
-        return (
-          <CityManagementPanel 
-            cities={gameState.cities}
-            onProductionSelect={handleCityProduction}
-          />
-        );
-      case 'research':
-        return <ResearchPanel />;
-      case 'units':
-        return (
-          <UnitPanel 
-            units={gameState.units}
-            onSelectUnit={setSelectedUnit}
-            onUnitCommand={handleUnitCommand}
-          />
-        );
-      case 'diplomacy':
-        return <DiplomacyPanel />;
-      case 'religion':
-        return <ReligionPanel />;
-      case 'policy':
-        return <PolicyPanel />;
-      case 'turn':
-        return (
-          <TurnManager 
-            turn={turn}
-            phase={phase}
-            onEndTurn={endTurn}
-            events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
-          />
-        );
-      default:
-        return <div className="p-4">선택된 탭이 없습니다</div>;
-    }
-  };
-
   return (
     <div className="h-[100vh] min-h-screen bg-slate-900 text-white flex flex-col">
       {/* 토스트 메시지 */}
@@ -436,11 +464,11 @@ useEffect(() => {
       />
       
       {/* 상단 네비게이션 */}
-      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-center border-b border-slate-700">
+      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-center border-b border-slate-700 overflow-hidden">
         <div className="fixed left-5 flex items-center">
           <span className="font-bold text-lg">문명</span>
         </div>
-        <div className="flex space-x-6">
+        <div className="flex space-x-6 max-w-[70vw] overflow-hidden">
           <div className="flex items-center">
             <span className="font-bold">턴: {turn}</span>
           </div>
@@ -450,7 +478,7 @@ useEffect(() => {
         </div>
         <div className="fixed flex items-center space-x-4 right-4">
           {/* 자원 표시 */}
-          <div className="flex items-center space-x-4 text-base">
+          <div className="flex items-center space-x-4 text-base overflow-x-auto">
             <div className="flex items-center">
               <div className="px-2 py-0.5 bg-green-400 text-white rounded-full mr-2 text-xs">식량</div>
               <span>{gameState.resources.food}</span>
@@ -471,10 +499,7 @@ useEffect(() => {
               <div className="px-2 py-0.5 bg-purple-400 text-white rounded-full mr-2 text-xs">문화</div>
               <span>{gameState.resources.culture}</span>
             </div>
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-gray-200 text-gray-800 rounded-full mr-2 text-xs">신앙</div>
-              <span>{gameState.resources.faith}</span>
-            </div>
+            
           </div>
         </div>
       </nav>
@@ -491,16 +516,6 @@ useEffect(() => {
             onClick={() => setSelectedTab('map')}
           >
             <Map size={24} />
-          </button>
-          <button
-            key="cities"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'cities' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('cities')}
-          >
-            <Book size={24} />
           </button>
           <button
             key="research"
@@ -533,26 +548,6 @@ useEffect(() => {
             <Users size={24} />
           </button>
           <button
-            key="religion"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'religion' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('religion')}
-          >
-            <Award size={24} />
-          </button>
-          <button
-            key="policy"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'policy' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('policy')}
-          >
-            <ChevronUp size={24} />
-          </button>
-          <button
             key="turn"
             className={cn(
               "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
@@ -573,9 +568,9 @@ useEffect(() => {
           {/* 하단 로그 및 명령 영역 */}
           <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
             {/* 로그 영역 */}
-            <div className="flex-1 p-3 overflow-auto flex flex-col-reverse">
+            <div className="flex-1 p-3 overflow-auto" id="logContainer">
               <div className="space-y-3">
-                {log.slice().reverse().map((entry: LogEntry, idx: number) => (
+                {log.map((entry: LogEntry, idx: number) => (
                   <div key={idx} className={cn(
                     "p-2 rounded",
                     entry.type === 'system' ? 'bg-slate-700 text-gray-300' :
@@ -599,57 +594,7 @@ useEffect(() => {
             {/* 명령 입력 및 정보 패널 영역 */}
             <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
               <div className="flex-1 overflow-auto mb-3">
-                {/* 현재 선택된 타일/유닛/도시 정보 */}
-                {infoPanel.open && infoPanel.data && (
-                  <div className="bg-slate-700 p-3 rounded mb-3">
-                    {/* 타일 정보 */}
-                    {infoPanel.type === 'tile' && (
-                      <>
-                        <div className="flex justify-between mb-2">
-                          <h4 className="font-bold">타일 정보</h4>
-                          <button onClick={() => setInfoPanel({ open: false, type: null, data: null })}>✕</button>
-                        </div>
-                        <div className="text-sm space-y-1">
-                          <p>위치: ({infoPanel.data.q}, {infoPanel.data.r})</p>
-                          <p>지형: {infoPanel.data.terrain}</p>
-                          {infoPanel.data.resource && <p>자원: {infoPanel.data.resource}</p>}
-                          {infoPanel.data.naturalWonder && <p>자연경관: {infoPanel.data.naturalWonder}</p>}
-                          {infoPanel.data.city && <p>도시: {infoPanel.data.city.name} (인구: {infoPanel.data.city.population})</p>}
-                          {infoPanel.data.unit && <p>유닛: {infoPanel.data.unit.typeName}</p>}
-                        </div>
-                        
-                        {/* 유닛 관련 액션 */}
-                        {selectedUnit && (
-                          <div className="mt-3 space-x-2">
-                            <button 
-                              className="bg-blue-600 text-xs px-2 py-1 rounded"
-                              onClick={() => handleUnitCommand(selectedUnit, 'fortify')}
-                              disabled={selectedUnit.hasActed}
-                            >
-                              요새화
-                            </button>
-                            <button 
-                              className="bg-green-600 text-xs px-2 py-1 rounded"
-                              onClick={() => handleUnitCommand(selectedUnit, 'skip_turn')}
-                              disabled={selectedUnit.hasActed}
-                            >
-                              턴 넘기기
-                            </button>
-                            {selectedUnit.type === 'settler' && (
-                              <button 
-                                className="bg-yellow-600 text-xs px-2 py-1 rounded"
-                                onClick={() => handleUnitCommand(selectedUnit, 'found_city')}
-                                disabled={selectedUnit.hasActed}
-                              >
-                                도시 건설
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+                
               </div>
               
               {/* 명령 입력 */}

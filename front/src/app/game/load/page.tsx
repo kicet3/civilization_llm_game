@@ -30,7 +30,7 @@ export default function GameLoadPage() {
     const fetchSavedGames = async () => {
       try {
         // TODO: 실제 저장된 게임 API 연동
-        const response = await fetch('/api/game/saved-games');
+        const response = await fetch('/game/saved-games');
         if (response.ok) {
           const games: SavedGame[] = await response.json();
           setSavedGames(games);
@@ -51,7 +51,7 @@ export default function GameLoadPage() {
 
     try {
       // TODO: 실제 게임 불러오기 API 연동
-      const response = await fetch(`/api/game/load/${selectedGame}`, {
+      const response = await fetch(`/game/load/${selectedGame}`, {
         method: 'POST',
       });
 

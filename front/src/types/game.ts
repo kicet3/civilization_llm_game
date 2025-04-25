@@ -114,6 +114,7 @@ export interface GameState {
   id: string;
   turn: number;
   year: number;
+  playerName: string;
   resources: {
     food: number;
     production: number;
@@ -255,4 +256,44 @@ export interface InfoPanel {
   open: boolean;
   type: 'tile' | 'city' | 'unit' | 'research' | 'policy' | null;
   data: any | null;
+}
+
+// 연구 API 타입 정의
+export interface Tech {
+  id: string;
+  name: string;
+  description?: string;
+  era?: string;
+  cost: number;
+  prerequisites: string[];
+  unlocks: string[] | UnlockItem[];
+  quote?: string;
+  turnsToComplete?: number;
+  status?: 'researched' | 'in_progress' | 'not_started' | 'available' | 'unavailable';
+}
+
+export interface UnlockItem {
+  id: string;
+  name: string;
+  type: string;
+  description?: string;
+}
+
+export interface ResearchStateResponse {
+  currentTechId: string | null;
+  researchedTechIds: string[];
+  progress: { [techId: string]: number };
+  sciencePerTurn: number;
+  era: string;
+}
+
+export interface ResearchPathResponse {
+  targetTech: {
+    id: string;
+    name: string;
+    era: string;
+  };
+  path: Tech[];
+  totalTurns: number;
+  totalCost: number;
 }

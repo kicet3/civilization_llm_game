@@ -24,7 +24,7 @@ export default function AuthPage() {
     e.preventDefault();
     try {
       // TODO: 실제 로그인 API 연동
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch('/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,7 +50,7 @@ export default function AuthPage() {
     e.preventDefault();
     try {
       // TODO: 실제 회원가입 API 연동
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch('/auth/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

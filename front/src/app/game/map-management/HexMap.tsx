@@ -154,6 +154,22 @@ export default function HexMap({
             ctx.fillStyle = getTerrainColor(hex.terrain);
           }
           ctx.fillRect(x - tileSize/2, y - tileSize/2, tileSize, tileSize);
+          
+          // 도시 위치 표시 (작은 원으로)
+          if (hex.city_id || (hex.occupant && hex.occupant === 'Korea' && hex.city)) {
+            // 도시 소유자에 따른 색상
+            ctx.fillStyle = hex.occupant === 'Korea' ? '#3498db' : '#e74c3c';
+            
+            // 작은 원 그리기
+            ctx.beginPath();
+            ctx.arc(x, y, tileSize * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 테두리 추가
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
         }
       });
       
@@ -588,8 +604,24 @@ useEffect(() => {
           drawResource(ctx, x, y, hex.resource);
         }
         
-        // 도시 렌더링
-        if (hex.city_id || (hex.occupant && hex.occupant === 'Korea')) {
+        // 도시 렌더링 (조건 개선)
+        if (hex.city_id || hex.city || (hex.occupant && hex.occupant === 'Korea')) {
+          // 도시 주변에 밝은 테두리 효과 추가
+          ctx.strokeStyle = hex.occupant === 'Korea' ? 'rgba(52, 152, 219, 0.7)' : 'rgba(231, 76, 60, 0.7)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          const glowRadius = HEX_WIDTH * scale / 1.8;
+          for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 3 * i;
+            const px = x + Math.cos(angle) * glowRadius;
+            const py = y + Math.sin(angle) * glowRadius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.stroke();
+          
+          // 도시 아이콘 그리기
           drawCity(ctx, x, y, hex.occupant || 'player');
         }
         
@@ -693,35 +725,51 @@ useEffect(() => {
   
   // 도시 그리기
   const drawCity = (ctx: CanvasRenderingContext2D, cx: number, cy: number, owner: string) => {
-    const radius = HEX_WIDTH * scale / 3;
+    const radius = HEX_WIDTH * scale / 2.5; // 더 크게 만들어 가시성 향상
+    
+    // 외부 글로우 효과
+    ctx.shadowColor = owner === 'Korea' ? 'rgba(52, 152, 219, 0.8)' : 'rgba(231, 76, 60, 0.8)';
+    ctx.shadowBlur = 10;
     
     // 소유자에 따른 색상
     const color = owner === 'Korea' ? '#3498db' : '#e74c3c';
     
-    // 도시는 원으로 표현
+    // 도시 기본 원형
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();
     
+    // 외곽선
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.stroke();
     
-    // 도시 표시 (중심에 별 모양)
-    ctx.fillStyle = '#fff';
-    const starSize = radius * 0.5;
+    // 글로우 효과 초기화 (다음 그림에 영향 없도록)
+    ctx.shadowBlur = 0;
     
-    ctx.beginPath();
-    for (let i = 0; i < 5; i++) {
-      const angle = (Math.PI / 2.5) * i - Math.PI / 2;
-      const x = cx + Math.cos(angle) * starSize;
-      const y = cy + Math.sin(angle) * starSize;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fill();
+    // 도시 건물 아이콘 (사각형 모양)
+    ctx.fillStyle = '#fff';
+    
+    // 중앙 건물 (높은 빌딩)
+    const buildingWidth = radius * 0.4;
+    const buildingHeight = radius * 0.8;
+    ctx.fillRect(cx - buildingWidth/2, cy - buildingHeight/2, buildingWidth, buildingHeight);
+    
+    // 왼쪽 건물 (작은 빌딩)
+    const smallBuildingWidth = radius * 0.3;
+    const smallBuildingHeight = radius * 0.5;
+    ctx.fillRect(cx - buildingWidth/2 - smallBuildingWidth, cy - smallBuildingHeight/2, smallBuildingWidth, smallBuildingHeight);
+    
+    // 오른쪽 건물 (중간 빌딩)
+    const mediumBuildingWidth = radius * 0.35;
+    const mediumBuildingHeight = radius * 0.6;
+    ctx.fillRect(cx + buildingWidth/2, cy - mediumBuildingHeight/2, mediumBuildingWidth, mediumBuildingHeight);
+
+    // 도시 이름 표시 플래그
+    ctx.fillStyle = owner === 'Korea' ? '#3498db' : '#e74c3c';
+    ctx.fillRect(cx - radius/2, cy + radius * 0.6, radius, radius * 0.3);
+    ctx.strokeRect(cx - radius/2, cy + radius * 0.6, radius, radius * 0.3);
   };
   
   // 유닛 그리기
