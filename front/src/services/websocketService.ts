@@ -34,8 +34,8 @@ class WebSocketService {
     
     // 새 웹소켓 연결 생성 - 단순히 /ws 엔드포인트로 연결
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/ws`;
+    const host = 'ws://localhost:8000';
+    const wsUrl = `${host}/ws`;
     
     try {
       this.socket = new WebSocket(wsUrl);

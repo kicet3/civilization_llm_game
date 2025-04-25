@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Send, User, CornerDownLeft, AlertTriangle, Info, X, RefreshCw } from 'lucide-react';
+import { Send, User, CornerDownLeft, AlertTriangle, Info, X, RefreshCw, Trash2, MessageCircle, PlayCircle, SplitSquareVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import websocketService, { ChatMessage } from '@/services/websocketService';
 import llmService from '@/services/llmService';
@@ -22,7 +22,13 @@ export default function GameChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
   
+  // 화면 분할 관련 상태
+  const [splitView, setSplitView] = useState(true); // 기본값은 분할 화면
+  const [activeTab, setActiveTab] = useState<'advice' | 'execution'>('advice'); // 모바일에서 활성화된 탭
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const adviceMessagesEndRef = useRef<HTMLDivElement>(null);
+  const executionMessagesEndRef = useRef<HTMLDivElement>(null);
   
   // 웹소켓 연결 설정
   useEffect(() => {
@@ -154,8 +160,13 @@ export default function GameChatPage() {
   
   // 채팅 메시지 자동 스크롤
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    if (!splitView) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      adviceMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      executionMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, splitView]);
   
   // 메시지 전송 함수
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -262,6 +273,26 @@ export default function GameChatPage() {
     );
   };
   
+  // 채팅 내용 지우기
+  const handleClearChat = () => {
+    // 시스템 메시지만 남기고 모두 삭제
+    const systemWelcomeMessage = {
+      type: 'system',
+      sender: 'system',
+      timestamp: new Date().toISOString(),
+      content: {
+        text: '채팅 내용이 모두 삭제되었습니다.'
+      }
+    };
+    
+    setChatMessages([systemWelcomeMessage]);
+  };
+  
+  // 화면 분할 토글
+  const toggleSplitView = () => {
+    setSplitView(!splitView);
+  };
+  
   // 시간 포맷팅 함수
   const formatTime = (timestamp: string) => {
     try {
@@ -290,6 +321,113 @@ export default function GameChatPage() {
     return sender || '알 수 없음';
   };
   
+  // 메시지가 조언인지 실행인지 구분
+  const isAdviceMessage = (message: ChatMessage) => {
+    // AI가 보낸 메시지나 시스템 메시지는 조언으로 간주
+    if (message.sender === 'ai_advisor' || message.type === 'system') return true;
+    
+    // 사용자가 보낸 메시지 중 !help, !turn, !unit 등의 명령이 없는 경우 조언으로 간주
+    if (message.sender === 'user') {
+      const text = message.content.text || '';
+      if (!text.startsWith('!')) return true;
+    }
+    
+    return false;
+  };
+  
+  const isExecutionMessage = (message: ChatMessage) => {
+    // 사용자가 보낸 명령어 메시지는 실행으로 간주
+    if (message.sender === 'user') {
+      const text = message.content.text || '';
+      if (text.startsWith('!')) return true;
+    }
+    
+    // 명령어 실행 결과(AI 응답 중 특정 형식)도 실행으로 간주
+    if (message.sender === 'ai_advisor' && message.content.is_command_result) return true;
+    
+    // 이벤트 메시지는 실행으로 간주
+    if (message.type === 'event') return true;
+    
+    return false;
+  };
+  
+  // 메시지 필터링
+  const adviceMessages = chatMessages.filter(isAdviceMessage);
+  const executionMessages = chatMessages.filter(msg => 
+    isExecutionMessage(msg) || msg.type === 'system' // 시스템 메시지는 양쪽에 모두 표시
+  );
+  
+  // 응답형 UI를 위한 화면 너비 감지
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth < 768); // 768px 미만이면 모바일로 간주
+    };
+    
+    // 초기 확인
+    checkIfMobile();
+    
+    // 화면 크기 변경 시 확인
+    window.addEventListener('resize', checkIfMobile);
+    
+    // 클린업
+    return () => {
+      window.removeEventListener('resize', checkIfMobile);
+    };
+  }, []);
+  
+  // 메시지 렌더링 함수
+  const renderMessage = (msg: ChatMessage, index: number) => (
+    <div 
+      key={index} 
+      className={cn(
+        "p-3 rounded-lg max-w-[90%]",
+        msg.sender === 'user' ? "ml-auto bg-indigo-600" :
+        msg.sender === 'ai_advisor' ? "bg-slate-700" :
+        msg.type === 'system' ? "mx-auto bg-slate-600 text-center max-w-md" :
+        msg.type === 'event' ? "mx-auto bg-amber-800 text-center max-w-md" :
+        msg.type === 'error' ? "mx-auto bg-red-700 text-center max-w-md" :
+        "bg-slate-700"
+      )}
+    >
+      <div className="flex items-center mb-1">
+        {msg.sender === 'ai_advisor' ? (
+          <Info size={14} className="mr-1 text-blue-400" />
+        ) : msg.sender === 'user' ? (
+          <User size={14} className="mr-1" />
+        ) : null}
+        
+        <span className="text-xs opacity-70">
+          {getSenderDisplayName(msg.sender || '')}
+        </span>
+        
+        <span className="text-xs opacity-50 ml-2">
+          {formatTime(msg.timestamp)}
+        </span>
+      </div>
+      
+      <div className="message-text whitespace-pre-wrap">
+        {msg.content.text}
+      </div>
+    </div>
+  );
+  
+  // 타이핑 표시 컴포넌트
+  const typingIndicator = (
+    <div className="p-3 rounded-lg max-w-[80%] bg-slate-700">
+      <div className="flex items-center mb-1">
+        <Info size={14} className="mr-1 text-blue-400" />
+        <span className="text-xs opacity-70">어드바이저</span>
+      </div>
+      <div className="flex space-x-1">
+        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
+      </div>
+    </div>
+  );
+  
   return (
     <div className="h-screen flex flex-col bg-slate-900 text-white">
       {/* 헤더 */}
@@ -298,12 +436,27 @@ export default function GameChatPage() {
           <button 
             onClick={handleBack}
             className="mr-4 p-2 hover:bg-slate-700 rounded-full"
+            title="게임으로 돌아가기"
           >
             <CornerDownLeft size={20} />
           </button>
           <h1 className="font-bold text-lg">채팅 게임 모드</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button 
+            onClick={toggleSplitView} 
+            className="p-2 hover:bg-slate-700 rounded-full text-blue-400"
+            title={splitView ? "분할 화면 해제" : "분할 화면 활성화"}
+          >
+            <SplitSquareVertical size={16} />
+          </button>
+          <button 
+            onClick={handleClearChat} 
+            className="p-2 hover:bg-slate-700 rounded-full text-red-400"
+            title="채팅 내용 지우기"
+          >
+            <Trash2 size={16} />
+          </button>
           {!connected && (
             <button 
               onClick={handleReconnect} 
@@ -335,61 +488,94 @@ export default function GameChatPage() {
         </div>
       )}
       
-      {/* 채팅 메시지 영역 */}
-      <div className="flex-1 overflow-auto p-4 space-y-4">
-        {chatMessages.map((msg, index) => (
-          <div 
-            key={index} 
+      {/* 모바일 탭 선택 (모바일에서만 표시) */}
+      {isMobile && splitView && (
+        <div className="flex border-b border-slate-700">
+          <button 
             className={cn(
-              "p-3 rounded-lg max-w-[80%]",
-              msg.sender === 'user' ? "ml-auto bg-indigo-600" :
-              msg.sender === 'ai_advisor' ? "bg-slate-700" :
-              msg.type === 'system' ? "mx-auto bg-slate-600 text-center max-w-md" :
-              msg.type === 'event' ? "mx-auto bg-amber-800 text-center max-w-md" :
-              msg.type === 'error' ? "mx-auto bg-red-700 text-center max-w-md" :
-              "bg-slate-700"
+              "flex-1 py-2 text-center flex items-center justify-center",
+              activeTab === 'advice' ? "bg-indigo-700 text-white" : "bg-slate-800 text-slate-300"
+            )}
+            onClick={() => setActiveTab('advice')}
+          >
+            <MessageCircle size={16} className="mr-2" />
+            조언
+          </button>
+          <button 
+            className={cn(
+              "flex-1 py-2 text-center flex items-center justify-center",
+              activeTab === 'execution' ? "bg-indigo-700 text-white" : "bg-slate-800 text-slate-300"
+            )}
+            onClick={() => setActiveTab('execution')}
+          >
+            <PlayCircle size={16} className="mr-2" />
+            실행
+          </button>
+        </div>
+      )}
+      
+      {/* 채팅 메시지 영역 */}
+      {!splitView ? (
+        // 분할되지 않은 단일 화면
+        <div className="flex-1 overflow-auto p-4 space-y-4">
+          {chatMessages.map(renderMessage)}
+          
+          {/* 타이핑 표시 */}
+          {isTyping && typingIndicator}
+          
+          {/* 자동 스크롤을 위한 참조 엘리먼트 */}
+          <div ref={messagesEndRef} />
+        </div>
+      ) : (
+        // 분할 화면 (조언/실행)
+        <div className={cn(
+          "flex-1 flex",
+          isMobile ? "flex-col" : "flex-row" // 모바일에서는 위아래로, 데스크톱에서는 좌우로 분할
+        )}>
+          {/* 조언 패널 */}
+          <div 
+            className={cn(
+              "flex-1 overflow-auto p-4 space-y-4 border-r border-slate-700",
+              isMobile && activeTab !== 'advice' && "hidden"
             )}
           >
-            <div className="flex items-center mb-1">
-              {msg.sender === 'ai_advisor' ? (
-                <Info size={14} className="mr-1 text-blue-400" />
-              ) : msg.sender === 'user' ? (
-                <User size={14} className="mr-1" />
-              ) : null}
-              
-              <span className="text-xs opacity-70">
-                {getSenderDisplayName(msg.sender || '')}
-              </span>
-              
-              <span className="text-xs opacity-50 ml-2">
-                {formatTime(msg.timestamp)}
-              </span>
+            <div className="sticky top-0 z-10 flex items-center justify-between mb-2 bg-slate-800 p-2 rounded-lg shadow-md">
+              <h2 className="font-semibold flex items-center">
+                <MessageCircle size={16} className="mr-2 text-blue-400" />
+                조언
+              </h2>
             </div>
             
-            <div className="message-text whitespace-pre-wrap">
-              {msg.content.text}
-            </div>
+            {adviceMessages.map(renderMessage)}
+            
+            {/* 타이핑 표시 (조언 패널에만 표시) */}
+            {isTyping && typingIndicator}
+            
+            {/* 자동 스크롤을 위한 참조 엘리먼트 */}
+            <div ref={adviceMessagesEndRef} />
           </div>
-        ))}
-        
-        {/* AI 타이핑 표시 */}
-        {isTyping && (
-          <div className="p-3 rounded-lg max-w-[80%] bg-slate-700">
-            <div className="flex items-center mb-1">
-              <Info size={14} className="mr-1 text-blue-400" />
-              <span className="text-xs opacity-70">어드바이저</span>
+          
+          {/* 실행 패널 */}
+          <div 
+            className={cn(
+              "flex-1 overflow-auto p-4 space-y-4",
+              isMobile && activeTab !== 'execution' && "hidden"
+            )}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between mb-2 bg-slate-800 p-2 rounded-lg shadow-md">
+              <h2 className="font-semibold flex items-center">
+                <PlayCircle size={16} className="mr-2 text-green-400" />
+                실행
+              </h2>
             </div>
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
-            </div>
+            
+            {executionMessages.map(renderMessage)}
+            
+            {/* 자동 스크롤을 위한 참조 엘리먼트 */}
+            <div ref={executionMessagesEndRef} />
           </div>
-        )}
-        
-        {/* 자동 스크롤을 위한 참조 엘리먼트 */}
-        <div ref={messagesEndRef} />
-      </div>
+        </div>
+      )}
       
       {/* 메시지 입력 영역 */}
       <form onSubmit={handleSendMessage} className="p-4 bg-slate-800 border-t border-slate-700">
