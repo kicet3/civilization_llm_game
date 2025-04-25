@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { 
@@ -8,6 +8,8 @@ import {
   Beaker, Users, Sword, ChevronDown, User, Send, 
   Home 
 } from 'lucide-react';
+
+// 컴포넌트 임포트
 import TurnManager, { TurnPhase } from './TurnManager';
 import ResearchPanel from "./research-management/ResearchPanel";
 import UnitPanel from "./unit-management/UnitPanel";
@@ -19,30 +21,154 @@ import Toast from './ui/Toast';
 import gameService from '@/services/gameService';
 import { GameState, HexTile, Unit, City } from '@/types/game';
 
+// 로그 엔트리 타입 정의
 interface LogEntry {
   type: 'system' | 'advisor' | 'event' | 'player';
   content: string;
   turn: number;
 }
 
+// 정보 패널 타입 정의
 interface InfoPanel {
   open: boolean;
   type: 'tile' | 'city' | 'unit' | 'research' | 'policy' | null;
   data: any | null;
 }
 
-// 로그 패널 분리하여 React.memo로 최적화
-const LogPanel = React.memo(({ 
+// 탭 네비게이션 컴포넌트 - 메모이제이션으로 불필요한 리렌더링 방지
+const TabNavigation = React.memo(({ 
+  selectedTab, 
+  onSelectTab 
+}: { 
+  selectedTab: string, 
+  onSelectTab: (tab: string) => void 
+}) => {
+  return (
+    <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
+      <button
+        key="map"
+        className={cn(
+          "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+          selectedTab === 'map' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+        )}
+        onClick={() => onSelectTab('map')}
+      >
+        <Map size={24} />
+      </button>
+      <button
+        key="research"
+        className={cn(
+          "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+          selectedTab === 'research' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+        )}
+        onClick={() => onSelectTab('research')}
+      >
+        <Beaker size={24} />
+      </button>
+      <button
+        key="units"
+        className={cn(
+          "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+          selectedTab === 'units' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+        )}
+        onClick={() => onSelectTab('units')}
+      >
+        <Sword size={24} />
+      </button>
+      <button
+        key="diplomacy"
+        className={cn(
+          "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+          selectedTab === 'diplomacy' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+        )}
+        onClick={() => onSelectTab('diplomacy')}
+      >
+        <Users size={24} />
+      </button>
+      <button
+        key="turn"
+        className={cn(
+          "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
+          selectedTab === 'turn' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
+        )}
+        onClick={() => onSelectTab('turn')}
+      >
+        <ChevronDown size={24} />
+      </button>
+    </div>
+  );
+});
+TabNavigation.displayName = 'TabNavigation';
+
+// 탑 네비게이션 바 컴포넌트 - 메모이제이션
+const TopNavigationBar = React.memo(({ turn, year, resources }: { 
+  turn: number, 
+  year: number, 
+  resources: GameState['resources'] 
+}) => {
+  return (
+    <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-center border-b border-slate-700 overflow-hidden">
+      <div className="fixed left-5 flex items-center">
+        <span className="font-bold text-lg">문명</span>
+      </div>
+      <div className="flex space-x-6 max-w-[70vw] overflow-hidden">
+        <div className="flex items-center">
+          <span className="font-bold">턴: {turn}</span>
+        </div>
+        <div className="flex items-center">
+          <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
+        </div>
+      </div>
+      <div className="fixed flex items-center space-x-4 right-4">
+        {/* 자원 표시 */}
+        <div className="flex items-center space-x-4 text-base overflow-x-auto">
+          <div className="flex items-center">
+            <div className="px-2 py-0.5 bg-green-400 text-white rounded-full mr-2 text-xs">식량</div>
+            <span>{resources.food}</span>
+          </div>
+          <div className="flex items-center">
+            <div className="px-2 py-0.5 bg-red-400 text-white rounded-full mr-2 text-xs">생산력</div>
+            <span>{resources.production}</span>
+          </div>
+          <div className="flex items-center">
+            <div className="px-2 py-0.5 bg-yellow-400 text-white rounded-full mr-2 text-xs">골드</div>
+            <span>{resources.gold}</span>
+          </div>
+          <div className="flex items-center">
+            <div className="px-2 py-0.5 bg-blue-400 text-white rounded-full mr-2 text-xs">과학</div>
+            <span>{resources.science}</span>
+          </div>
+          <div className="flex items-center">
+            <div className="px-2 py-0.5 bg-purple-400 text-white rounded-full mr-2 text-xs">문화</div>
+            <span>{resources.culture}</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+  );
+});
+TopNavigationBar.displayName = 'TopNavigationBar';
+
+// 게임 로그 컴포넌트 - 메모이제이션
+const GameLog = React.memo(({ 
   log, 
   commandInput, 
   setCommandInput, 
   handleCommand 
-}: {
-  log: LogEntry[];
-  commandInput: string;
-  setCommandInput: (value: string) => void;
-  handleCommand: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
+}: { 
+  log: LogEntry[], 
+  commandInput: string, 
+  setCommandInput: (value: string) => void, 
+  handleCommand: (e: React.FormEvent<HTMLFormElement>) => void 
 }) => {
+  // 로그가 추가될 때마다 스크롤을 맨 아래로 이동
+  useEffect(() => {
+    const logContainer = document.getElementById('logContainer');
+    if (logContainer) {
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+  }, [log]);
+
   return (
     <div className="h-[25vh] bg-slate-800 border-t border-slate-700 flex">
       {/* 로그 영역 */}
@@ -72,7 +198,7 @@ const LogPanel = React.memo(({
       {/* 명령 입력 및 정보 패널 영역 */}
       <div className="w-1/3 border-l border-slate-700 p-3 flex flex-col">
         <div className="flex-1 overflow-auto mb-3">
-          
+          {/* 정보 패널 영역 - 필요한 경우 추가 */}
         </div>
         
         {/* 명령 입력 */}
@@ -95,7 +221,9 @@ const LogPanel = React.memo(({
     </div>
   );
 });
+GameLog.displayName = 'GameLog';
 
+// 메인 게임 페이지 컴포넌트
 export default function GamePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -137,43 +265,19 @@ export default function GamePage() {
     data: null 
   });
   
-  // 토스트 메시지
+  // 토스트 메시지 상태
   const [toast, setToast] = useState<{
     message: string;
     show: boolean;
     type?: 'info' | 'success' | 'warning' | 'error';
   }>({ message: '', show: false });
-    // 탭 컴포넌트 캐싱을 위한 상태 추가 (약 50-70줄 사이 다른 useState 근처에 추가)
-const [tabComponents, setTabComponents] = useState<{[key: string]: React.ReactNode}>({});
-
-// 초기화 시 탭 컴포넌트 생성 (다른 useEffect 근처에 추가)
-useEffect(() => {
-  if (isLoading || error || !gameState) return;
   
-  setTabComponents({
-    map: <HexMap 
-      gameId={gameId}
-      onTileClick={handleSelectTile}
-      selectedTile={selectedTile}
-    />,
-    research: <ResearchPanel updateGameData={updateGameData} />,
-    units: <UnitPanel />,
-    diplomacy: <DiplomacyPanel 
-      mapData={Array.isArray(mapData) ? mapData : []} 
-      playerCivId={playerCiv}
-    />,
-    turn: <TurnManager 
-      turn={turn}
-      phase={phase}
-      onEndTurn={endTurn}
-      updateGameData={updateGameData}
-      events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
-    />
-  });
-}, [gameState, isLoading, error]);
   // 게임 초기화
+  useEffect(() => {
+    loadGameData();
+  }, [gameId]);
   
-useEffect(() => {
+  // 게임 데이터 로드 함수
   const loadGameData = async () => {
     if (!gameId) return;
     
@@ -187,7 +291,7 @@ useEffect(() => {
       // 맵 데이터 불러오기
       const mapResult = await gameService.getMap();
       console.log("맵 데이터 로드 완료:", mapResult);
-      setMapData(mapResult.hexagons);
+      setMapData(mapResult);
       
       // 게임의 현재 턴과 상태 불러오기
       const gameState = await gameService.getGameState();
@@ -198,7 +302,13 @@ useEffect(() => {
         
         // 다른 게임 상태 변수 설정
         setGameState(gameState);
-        setSelectedCity(gameState.cities.length > 0 ? gameState.cities[0] : null);
+        if (gameState.cities && gameState.cities.length > 0) {
+          setSelectedCity(gameState.cities[0]);
+        }
+        
+        // 초기 로그 메시지 추가
+        addLog('system', '게임이 시작되었습니다.', gameState.turn);
+        addLog('advisor', `${playerName}님, 환영합니다. 이제 문명을 이끌어주세요.`, gameState.turn);
       }
       
       console.log("모든 게임 데이터 로딩 완료!");
@@ -209,31 +319,19 @@ useEffect(() => {
       setIsLoading(false);
     }
   };
-
-  loadGameData();
-  
-  // 맵 데이터 주기적 업데이트 대신, 필요한 시점에만 업데이트하도록 변경
-  return () => {
-    console.log("게임 페이지 언마운트 - 정리 작업 수행");
-  };
-}, [gameId]);
   
   // 리서치 데이터 로드 함수
   const loadResearchData = async () => {
     try {
       console.log("리서치 데이터 로딩 중...");
       // 여기서는 연구 데이터 로드 로직을 실제 API에 맞게 구현
-      // 실제 API가 있다면 아래 주석을 해제하고 사용
-      // const techData = await researchService.getAvailableTechnologies();
-      // 리서치 데이터 로드 완료 후 처리 로직 추가
     } catch (error) {
       console.error("리서치 데이터 로딩 오류:", error);
-      setError(error instanceof Error ? error.message : '리서치 데이터를 로드하는 중 오류가 발생했습니다');
     }
   };
 
-  // 게임 데이터 수동 업데이트 함수 - 턴 종료나 중요 이벤트 발생 시 호출
-  const updateGameData = async () => {
+  // 게임 데이터 수동 업데이트 함수 - 메모이제이션으로 성능 최적화
+  const updateGameData = useCallback(async () => {
     if (!gameId) return;
     
     try {
@@ -242,7 +340,7 @@ useEffect(() => {
       // 맵 데이터 업데이트
       const mapResult = await gameService.getMap();
       console.log("맵 데이터 업데이트 완료");
-      setMapData(mapResult.hexagons);
+      setMapData(mapResult);
       
       // 게임 상태 업데이트
       const gameState = await gameService.getGameState();
@@ -251,7 +349,9 @@ useEffect(() => {
         setTurn(gameState.turn);
         setYear(gameState.year);
         setGameState(gameState);
-        setSelectedCity(gameState.cities.length > 0 ? gameState.cities[0] : null);
+        if (gameState.cities && gameState.cities.length > 0) {
+          setSelectedCity(gameState.cities[0]);
+        }
       }
       
       // 리서치 데이터 업데이트
@@ -261,14 +361,12 @@ useEffect(() => {
     } catch (error) {
       console.error("게임 데이터 업데이트 오류:", error);
       setError(error instanceof Error ? error.message : '게임 데이터를 업데이트하는 중 오류가 발생했습니다');
-      throw error; // 오류를 호출자에게 전파하여 적절히 처리할 수 있도록 함
+      throw error;
     }
-  };
+  }, [gameId]);
 
-  /**
-   * 턴 종료 처리
-   */
-  const endTurn = async () => {
+  // 턴 종료 처리 - 메모이제이션으로 성능 최적화
+  const endTurn = useCallback(async () => {
     try {
       console.log("턴 종료 중...");
       setIsLoading(true);
@@ -292,31 +390,23 @@ useEffect(() => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [turn, updateGameData]);
   
-  // 토스트 메시지 표시
-  const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+  // 토스트 메시지 표시 - 메모이제이션으로 성능 최적화
+  const showToast = useCallback((message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     setToast({ message, show: true, type });
     setTimeout(() => {
-      setToast({ message: '', show: false });
+      setToast(prev => ({ ...prev, show: false }));
     }, 3000);
-  };
+  }, []);
   
-  // 게임 로그 추가
+  // 게임 로그 추가 - 메모이제이션으로 성능 최적화
   const addLog = useCallback((type: LogEntry['type'], content: string, currentTurn: number) => {
     setLog(prev => [...prev, { type, content, turn: currentTurn }]);
   }, []);
   
-  // 로그가 추가될 때마다 스크롤을 맨 아래로 이동
-  useEffect(() => {
-    const logContainer = document.getElementById('logContainer');
-    if (logContainer) {
-      logContainer.scrollTop = logContainer.scrollHeight;
-    }
-  }, [log]);
-  
-  // 타일 선택 처리
-  const handleSelectTile = (tile: HexTile) => {
+  // 타일 선택 처리 - 메모이제이션으로 성능 최적화
+  const handleSelectTile = useCallback((tile: HexTile) => {
     try {
       setSelectedTile(tile);
       
@@ -346,10 +436,10 @@ useEffect(() => {
       console.error('타일 선택 중 오류:', err);
       showToast('타일 선택 중 오류 발생', 'error');
     }
-  };
+  }, [showToast]);
   
-  // 유닛 이동 처리
-  const handleUnitMove = (unit: Unit, q: number, r: number) => {
+  // 유닛 이동 처리 - 메모이제이션으로 성능 최적화
+  const handleUnitMove = useCallback((unit: Unit, q: number, r: number) => {
     if (!mapData || !Array.isArray(mapData) || mapData.length === 0) {
       console.error('맵 데이터가 없거나 유효하지 않습니다');
       showToast('맵 데이터 오류로 이동할 수 없습니다', 'error');
@@ -388,10 +478,10 @@ useEffect(() => {
       console.error('유닛 이동 중 오류:', err);
       showToast('유닛 이동 중 오류 발생', 'error');
     }
-  };
+  }, [mapData, turn, addLog, showToast]);
   
-  // 유닛 명령 처리
-  const handleUnitCommand = async (unit: Unit, command: string) => {
+  // 유닛 명령 처리 - 메모이제이션으로 성능 최적화
+  const handleUnitCommand = useCallback(async (unit: Unit, command: string) => {
     try {
       const { unit: updatedUnit } = await gameService.commandUnit(unit.id, command);
       
@@ -408,10 +498,10 @@ useEffect(() => {
     } catch (err) {
       showToast(err instanceof Error ? err.message : '명령 실패', 'error');
     }
-  };
+  }, [turn, addLog, showToast]);
   
-  // 명령어 입력 처리
-  const handleCommand = async (e: React.FormEvent<HTMLFormElement>) => {
+  // 명령어 입력 처리 - 메모이제이션으로 성능 최적화
+  const handleCommand = useCallback((e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!commandInput.trim() || !gameState) return;
     
@@ -474,65 +564,59 @@ useEffect(() => {
     }
     
     setCommandInput('');
-  };
+  }, [commandInput, gameState, turn, addLog, endTurn, selectedUnit]);
+
+  // 탭 선택 핸들러 - 메모이제이션으로 성능 최적화
+  const handleSelectTab = useCallback((tab: string) => {
+    setSelectedTab(tab);
+  }, []);
   
-  // 현재 선택된 탭에 따른 컴포넌트 렌더링
-  
-const renderTabContent = () => {
-  try {
-    if (isLoading) {
-      return <div className="flex items-center justify-center h-full">로딩 중...</div>;
-    }
-    
-    if (error) {
+  // 메모이제이션된 탭 컨텐츠 렌더링
+  const tabContent = useMemo(() => {
+    try {
+      switch (selectedTab) {
+        case 'map':
+          return (
+            <HexMap 
+              gameId={gameId}
+              onTileClick={handleSelectTile}
+              selectedTile={selectedTile}
+            />
+          );
+        case 'research':
+          return <ResearchPanel updateGameData={updateGameData} />;
+        case 'units':
+          return <UnitPanel />;
+        case 'diplomacy':
+          return (
+            <DiplomacyPanel 
+              mapData={Array.isArray(mapData) ? mapData : []} 
+              playerCivId={playerCiv}
+            />
+          );
+        case 'turn':
+          return (
+            <TurnManager 
+              turn={turn}
+              phase={phase}
+              onEndTurn={endTurn}
+              updateGameData={updateGameData}
+              events={log.filter(entry => entry.type === 'event' && entry.turn === turn)}
+            />
+          );
+        default:
+          return <div className="p-4">선택된 탭이 없습니다</div>;
+      }
+    } catch (err) {
+      console.error('탭 렌더링 중 오류:', err);
       return (
-        <div className="flex flex-col items-center justify-center h-full">
-          <div className="text-red-500 mb-4">{error}</div>
-          <button
-            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700"
-            onClick={() => router.push('/game/select-mode')}
-          >
-            게임 선택 페이지로 돌아가기
-          </button>
+        <div className="p-4 text-red-400">
+          탭 콘텐츠를 로드하는 중 오류가 발생했습니다. 다른 탭을 선택해보세요.
         </div>
       );
     }
-    
-    // 탭 컴포넌트가 초기화되지 않았으면 로딩 표시
-    if (Object.keys(tabComponents).length === 0) {
-      return <div className="flex items-center justify-center h-full">탭 초기화 중...</div>;
-    }
-    
-    // 캐시된 컴포넌트 사용
-    return (
-      <div className="h-[100%]">
-        <div style={{ display: selectedTab === 'map' ? 'block' : 'none', height: '100%' }}>
-          {tabComponents.map}
-        </div>
-        <div style={{ display: selectedTab === 'research' ? 'block' : 'none', height: '100%' }}>
-          {tabComponents.research}
-        </div>
-        <div style={{ display: selectedTab === 'units' ? 'block' : 'none', height: '100%' }}>
-          {tabComponents.units}
-        </div>
-        <div style={{ display: selectedTab === 'diplomacy' ? 'block' : 'none', height: '100%' }}>
-          {tabComponents.diplomacy}
-        </div>
-        <div style={{ display: selectedTab === 'turn' ? 'block' : 'none', height: '100%' }}>
-          {tabComponents.turn}
-        </div>
-      </div>
-    );
-  } catch (err) {
-    console.error('탭 렌더링 중 오류:', err);
-    return (
-      <div className="p-4 text-red-400">
-        탭 콘텐츠를 로드하는 중 오류가 발생했습니다. 다른 탭을 선택해보세요.
-      </div>
-    );
-  }
-};
-  
+  }, [selectedTab, gameId, mapData, handleSelectTile, selectedTile, updateGameData, turn, phase, endTurn, log, playerCiv]);
+
   // 로딩 중 화면
   if (isLoading) {
     return (
@@ -567,115 +651,32 @@ const renderTabContent = () => {
       />
       
       {/* 상단 네비게이션 */}
-      <nav className="h-[7vh] bg-slate-800 p-2 flex items-center justify-center border-b border-slate-700 overflow-hidden">
-        <div className="fixed left-5 flex items-center">
-          <span className="font-bold text-lg">문명</span>
-        </div>
-        <div className="flex space-x-6 max-w-[70vw] overflow-hidden">
-          <div className="flex items-center">
-            <span className="font-bold">턴: {turn}</span>
-          </div>
-          <div className="flex items-center">
-            <span>{year < 0 ? `BC ${Math.abs(year)}` : `AD ${year}`}</span>
-          </div>
-        </div>
-        <div className="fixed flex items-center space-x-4 right-4">
-          {/* 자원 표시 */}
-          <div className="flex items-center space-x-4 text-base overflow-x-auto">
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-green-400 text-white rounded-full mr-2 text-xs">식량</div>
-              <span>{gameState.resources.food}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-red-400 text-white rounded-full mr-2 text-xs">생산력</div>
-              <span>{gameState.resources.production}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-yellow-400 text-white rounded-full mr-2 text-xs">골드</div>
-              <span>{gameState.resources.gold}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-blue-400 text-white rounded-full mr-2 text-xs">과학</div>
-              <span>{gameState.resources.science}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="px-2 py-0.5 bg-purple-400 text-white rounded-full mr-2 text-xs">문화</div>
-              <span>{gameState.resources.culture}</span>
-            </div>
-            
-          </div>
-        </div>
-      </nav>
+      <TopNavigationBar 
+        turn={turn} 
+        year={year} 
+        resources={gameState.resources} 
+      />
       
       <div className="h-[calc(100vh-3rem)] flex-1 flex flex-row">
         {/* 왼쪽 탭 네비게이션 */}
-        <div className="w-16 bg-slate-800 border-r border-slate-700 flex flex-col items-center py-4">
-          <button
-            key="map"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'map' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('map')}
-          >
-            <Map size={24} />
-          </button>
-          <button
-            key="research"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'research' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('research')}
-          >
-            <Beaker size={24} />
-          </button>
-          <button
-            key="units"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'units' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('units')}
-          >
-            <Sword size={24} />
-          </button>
-          <button
-            key="diplomacy"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'diplomacy' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('diplomacy')}
-          >
-            <Users size={24} />
-          </button>
-          <button
-            key="turn"
-            className={cn(
-              "w-12 h-12 mb-4 rounded-lg flex items-center justify-center",
-              selectedTab === 'turn' ? 'bg-indigo-600' : 'bg-slate-700 hover:bg-slate-600'
-            )}
-            onClick={() => setSelectedTab('turn')}
-          >
-            <ChevronDown size={24} />
-          </button>
-        </div>
+        <TabNavigation 
+          selectedTab={selectedTab} 
+          onSelectTab={handleSelectTab} 
+        />
         
         {/* 메인 콘텐츠 영역 */}
-<div className="h-[93vh] flex-1 flex flex-col overflow-hidden">
-  <div className="h-[100%] flex-1 overflow-hidden">
-    {renderTabContent()}
-  </div>
+        <div className="h-[93vh] flex-1 flex flex-col overflow-hidden">
+          <div className="h-[100%] flex-1 overflow-hidden">
+            {tabContent}
+          </div>
           
-          {/* 하단 로그 및 명령 영역 - 별도 컴포넌트로 분리 */}
-  <LogPanel 
-    log={log}
-    commandInput={commandInput}
-    setCommandInput={setCommandInput}
-    handleCommand={(e: React.FormEvent<HTMLFormElement>) => handleCommand(e)}
-  />
-
+          {/* 하단 로그 및 명령 영역 */}
+          <GameLog
+            log={log}
+            commandInput={commandInput}
+            setCommandInput={setCommandInput}
+            handleCommand={handleCommand}
+          />
         </div>
       </div>
     </div>
