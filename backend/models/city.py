@@ -30,18 +30,20 @@ class CitySpecialization(str, Enum):
     FAITH = "faith"
     BALANCED = "balanced"
 
-class ProductionQueueItem(BaseModel):
-    """생산 대기열 아이템 모델"""
-    name: str
-    type: ProductionType
-    turnsLeft: int
-
 class Building(BaseModel):
-    """건물 모델"""
+    """건물 정보 모델"""
     id: str
     name: str
-    type: BuildingType
-    effects: Dict[str, Any]
+    effects: Optional[Dict[str, Any]] = None
+
+class ProductionQueueItem(BaseModel):
+    """생산 대기열 아이템 모델"""
+    id: Optional[int] = None
+    itemType: ProductionType
+    itemId: str
+    name: str
+    turnsLeft: int
+    queueOrder: int
 
 class CityResponse(BaseModel):
     """도시 정보 응답 모델"""
@@ -74,8 +76,8 @@ class CityProduceRequest(BaseModel):
     """도시 생산 요청 모델"""
     gameId: str
     cityId: str
-    item: str
-    type: ProductionType
+    itemType: ProductionType
+    itemId: str
 
 class CitySpecializeRequest(BaseModel):
     """도시 특화 요청 모델"""

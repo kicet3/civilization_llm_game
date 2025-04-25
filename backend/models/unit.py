@@ -5,13 +5,18 @@ from models.map import HexCoord
 
 class UnitType(str, Enum):
     """유닛 타입 enum"""
-    MELEE = "melee"        # 근접 유닛
-    RANGED = "ranged"      # 원거리 유닛
-    MOUNTED = "mounted"    # 기병 유닛
-    NAVAL = "naval"        # 해군 유닛
-    AIR = "air"            # 공군 유닛
-    CIVILIAN = "civilian"  # 민간 유닛
-    RELIGIOUS = "religious" # 종교 유닛
+    WARRIOR = "warrior"
+    SWORDSMAN = "swordsman"
+    KNIGHT = "knight"
+    PIKEMAN = "pikeman"
+    SCOUT = "scout"
+    ARCHER = "archer"
+    CATAPULT = "catapult"
+    SETTLER = "settler"
+    BUILDER = "builder"
+    
+    # 생산 비용 필드 추가 (턴 단위)
+    productionCost: int = 1
 
 class UnitStatus(str, Enum):
     """유닛 상태 enum"""

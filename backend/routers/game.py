@@ -6,10 +6,21 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 from typing import List, Dict, Any, Set, Tuple
 from prisma.models import GameSession, Player, Hexagon, City, Unit, UnitType, Terrain, Resource
-from models.game import GameSessionCreate, GameSessionResponse, GameState, GameOptions, GameOptionsResponse
+from models.game import GameSessionCreate, GameSessionResponse, GameState, GameOptions, GameOptionsResponse, TurnEndRequest, TurnEndResponse, GameTurnInfo, GameSpeed, GamePhase
 from models.map import MapType, Difficulty
 from core.config import prisma_client, settings
 import json
+from models.unit import UnitMoveRequest, UnitResponse
+from utils.turn_manager import process_turn_end
+from utils.scenario_manager import calculate_turn_year
+from routers.websocket import manager as ws_manager
+from utils.map_utils import (
+    assign_guaranteed_resources, 
+    distribute_map_resources, 
+    setup_capital_yield, 
+    create_starting_units,
+    get_suggested_improvements
+)
 
 router = APIRouter()
 
@@ -264,6 +275,30 @@ async def ensure_basic_game_data():
             "move": 3,
             "combat_strength": 5,
             "range": 0
+        },
+        {
+            "id": "builder",
+            "name": "개척자",
+            "category": "civilian",
+            "move": 2,
+            "combat_strength": 0,
+            "range": 0
+        },
+        {
+            "id": "knight",
+            "name": "기사",
+            "category": "melee",
+            "move": 3,
+            "combat_strength": 20,
+            "range": 0
+        },
+        {
+            "id": "crossbowman",
+            "name": "석궁병",
+            "category": "ranged",
+            "move": 2,
+            "combat_strength": 15,
+            "range": 2
         }
     ]
     
@@ -327,6 +362,11 @@ async def ensure_basic_game_data():
             "id": "lake",
             "name": "호수",
             "yield_json": json.dumps({"food": 2, "production": 0})
+        },
+        {
+            "id": "jungle",
+            "name": "정글",
+            "yield_json": json.dumps({"food": 2, "production": 0})
         }
     ]
     
@@ -344,12 +384,27 @@ async def ensure_basic_game_data():
         {
             "id": "wheat",
             "name": "밀",
-            "type": "bonus"
+            "type": "food"
         },
         {
             "id": "cattle",
             "name": "소",
-            "type": "bonus"
+            "type": "food"
+        },
+        {
+            "id": "sheep",
+            "name": "양",
+            "type": "food"
+        },
+        {
+            "id": "rice",
+            "name": "쌀",
+            "type": "food"
+        },
+        {
+            "id": "deer",
+            "name": "사슴",
+            "type": "food"
         },
         {
             "id": "horses",
@@ -359,32 +414,37 @@ async def ensure_basic_game_data():
         {
             "id": "iron",
             "name": "철",
-            "type": "strategic"
-        },
-        {
-            "id": "gold",
-            "name": "금",
-            "type": "luxury"
-        },
-        {
-            "id": "silver",
-            "name": "은",
-            "type": "luxury"
+            "type": "production"
         },
         {
             "id": "stone",
             "name": "돌",
-            "type": "bonus"
+            "type": "production"
         },
         {
-            "id": "deer",
-            "name": "사슴",
-            "type": "bonus"
+            "id": "copper",
+            "name": "구리",
+            "type": "production"
+        },
+        {
+            "id": "gold",
+            "name": "금",
+            "type": "gold"
+        },
+        {
+            "id": "silver",
+            "name": "은",
+            "type": "gold"
+        },
+        {
+            "id": "gems",
+            "name": "보석",
+            "type": "gold"
         },
         {
             "id": "fish",
             "name": "물고기",
-            "type": "bonus"
+            "type": "food"
         },
         {
             "id": "coal",
@@ -406,6 +466,45 @@ async def ensure_basic_game_data():
         
         if not existing:
             await prisma_client.resource.create(data=resource)
+    
+    # 기본 개선 시설 정의
+    default_improvements = [
+        {
+            "id": "farm",
+            "name": "농장",
+            "yield_json": json.dumps({"food": 1})
+        },
+        {
+            "id": "mine",
+            "name": "광산",
+            "yield_json": json.dumps({"production": 1})
+        },
+        {
+            "id": "pasture",
+            "name": "목장",
+            "yield_json": json.dumps({"food": 1, "production": 1})
+        },
+        {
+            "id": "camp",
+            "name": "캠프",
+            "yield_json": json.dumps({"food": 1, "gold": 1})
+        },
+        {
+            "id": "plantation",
+            "name": "농원",
+            "yield_json": json.dumps({"food": 1, "gold": 1})
+        }
+    ]
+    
+    # 각 개선 시설 확인 및 생성
+    improvement_table_exists = await prisma_client.raw_query("SELECT to_regclass('public.improvement');")
+    if improvement_table_exists and improvement_table_exists[0][0]:
+        for improvement in default_improvements:
+            existing = await prisma_client.raw_query(f"SELECT id FROM improvement WHERE id = '{improvement['id']}';")
+            if not existing or len(existing) == 0:
+                await prisma_client.raw_query(
+                    f"INSERT INTO improvement (id, name, yield_json) VALUES ('{improvement['id']}', '{improvement['name']}', '{improvement['yield_json']}');"
+                )
 
 async def create_initial_units(game_session_id: str, player_id: int, start_hex: Hexagon):
     """플레이어 초기 유닛 생성"""
@@ -612,17 +711,58 @@ async def create_game_session(request: GameSessionCreate):
             }
         )
         
-        # 5. 플레이어 시작 위치 찾기
-        start_hex = await find_starting_position(game_session.id, occupied_positions)
+        # 5. 플레이어 시작 위치를 왼쪽 상단으로 고정
+        # 맵의 왼쪽 상단 영역에서 적합한 시작 타일 찾기
+        map_width = settings.DEFAULT_MAP_WIDTH
+        map_height = settings.DEFAULT_MAP_HEIGHT
+        
+        # 왼쪽 상단 영역 정의 (맵의 1/4 영역)
+        left_upper_hexes = await prisma_client.hexagon.find_many(
+            where={
+                "session_id": game_session.id,
+                "q": {"lte": map_width // 3},
+                "r": {"lte": map_height // 3},
+                "terrain_id": {"in": ["grassland", "plains"]}
+            }
+        )
+        
+        if not left_upper_hexes:
+            # 왼쪽 상단에 적합한 타일이 없으면 일반적인 방법으로 시작 위치 찾기
+            start_hex = await find_starting_position(game_session.id, occupied_positions)
+        else:
+            # 왼쪽 상단 영역에서 가장 적합한 타일 선택 (자원이 인접해 있는 타일 우선)
+            best_hex = None
+            best_resource_count = -1
+            
+            for hex in left_upper_hexes:
+                # 주변 자원 확인
+                nearby_resources = await prisma_client.hexagon.find_many(
+                    where={
+                        "session_id": game_session.id,
+                        "q": {"gte": hex.q - 2, "lte": hex.q + 2},
+                        "r": {"gte": hex.r - 2, "lte": hex.r + 2},
+                        "resource_id": {"not": None}
+                    }
+                )
+                
+                if len(nearby_resources) > best_resource_count:
+                    best_resource_count = len(nearby_resources)
+                    best_hex = hex
+            
+            # 자원이 없는 경우에도 왼쪽 상단의 타일 하나 선택
+            start_hex = best_hex if best_hex else random.choice(left_upper_hexes)
         
         # 시작 위치 점유 표시
-        occupied_positions.add((start_hex.q, start_hex.r, start_hex.s))
+        player_capital_coord = (start_hex.q, start_hex.r, start_hex.s)
+        occupied_positions.add(player_capital_coord)
         
-        # 6. 초기 유닛 및 도시 생성
-        initial_units = await create_initial_units(game_session.id, player.id, start_hex)
+        # 수도 타일 기본 수확량 설정
+        await setup_capital_yield(game_session.id, [player_capital_coord])
+        
+        # 6. 초기 도시 생성 (수도)
         initial_city = await create_initial_city(game_session.id, player.id, start_hex, request.playerCiv)
         
-        # 7. AI 문명 생성 (개선된 버전)
+        # 7. AI 문명 생성 및 배치
         ai_civs = [
             "china", "rome", "egypt", "japan", "france", 
             "germany", "england", "america", "india", "russia"
@@ -637,6 +777,13 @@ async def create_game_session(request: GameSessionCreate):
         # AI 무작위 섞기
         random.shuffle(ai_civs)
         
+        # AI 시작 위치 간의 최소 거리 증가 (5칸 -> 7칸)
+        min_distance_between_ai = 5
+        min_distance_from_player = 7  # 플레이어로부터 최소 7칸 떨어지도록 설정
+        
+        ai_capital_coords = []  # AI 수도 좌표 리스트
+        ai_players_data = []    # AI 플레이어 정보 리스트
+        
         for i in range(1, request.civCount):
             ai_civ = ai_civs[i-1]
             
@@ -650,18 +797,100 @@ async def create_game_session(request: GameSessionCreate):
                 }
             )
             
-            # AI 시작 위치 선택 (이미 점유된 위치와 일정 거리 이상 떨어진 위치)
-            ai_start_hex = await find_starting_position(game_session.id, occupied_positions)
+            ai_players_data.append(ai_player)
+            
+            # 플레이어 위치에서 충분히 떨어진 위치 찾기
+            player_pos = player_capital_coord
+            
+            # 모든 적합한 타일 조회
+            suitable_hexes = await prisma_client.hexagon.find_many(
+                where={
+                    "session_id": game_session.id,
+                    "terrain_id": {"in": ["grassland", "plains"]}
+                }
+            )
+            
+            # 플레이어와 다른 AI로부터 충분히 떨어진 위치 찾기
+            valid_hexes = []
+            for hex in suitable_hexes:
+                hex_coord = (hex.q, hex.r, hex.s)
+                
+                # 플레이어로부터의 거리 확인
+                dist_to_player = hex_distance(hex_coord, player_pos)
+                if dist_to_player < min_distance_from_player:
+                    continue
+                
+                # 다른 AI로부터의 거리 확인
+                too_close = False
+                for occupied in occupied_positions:
+                    if hex_distance(hex_coord, occupied) < min_distance_between_ai:
+                        too_close = True
+                        break
+                
+                if not too_close:
+                    valid_hexes.append(hex)
+            
+            # 유효한 위치가 없으면 거리 제약 완화
+            if not valid_hexes:
+                for hex in suitable_hexes:
+                    hex_coord = (hex.q, hex.r, hex.s)
+                    
+                    # 플레이어로부터의 거리만 확인 (최소 5칸)
+                    dist_to_player = hex_distance(hex_coord, player_pos)
+                    if dist_to_player >= 5:
+                        valid_hexes.append(hex)
+            
+            # 그래도 위치가 없으면 일반적인 방법으로 찾기
+            if valid_hexes:
+                ai_start_hex = random.choice(valid_hexes)
+            else:
+                ai_start_hex = await find_starting_position(game_session.id, occupied_positions, min_distance=5)
             
             if ai_start_hex:
                 # 시작 위치 점유 표시
-                occupied_positions.add((ai_start_hex.q, ai_start_hex.r, ai_start_hex.s))
+                ai_capital_coord = (ai_start_hex.q, ai_start_hex.r, ai_start_hex.s)
+                occupied_positions.add(ai_capital_coord)
+                ai_capital_coords.append(ai_capital_coord)
                 
-                # AI 초기 유닛 및 도시 생성
-                await create_initial_units(game_session.id, ai_player.id, ai_start_hex)
+                # 수도 타일 기본 수확량 설정
+                await setup_capital_yield(game_session.id, [ai_capital_coord])
+                
+                # AI 초기 도시 생성
                 await create_initial_city(game_session.id, ai_player.id, ai_start_hex, ai_civ)
         
-        # 8. 초기 게임 상태 정의
+        # 모든 플레이어 수도 좌표 리스트
+        all_capital_coords = [player_capital_coord] + ai_capital_coords
+        
+        # 8. 각 수도 반경 2칸 내에 보장 자원 배치
+        await assign_guaranteed_resources(game_session.id, all_capital_coords)
+        
+        # 9. 전체 맵에 자원 분포
+        await distribute_map_resources(game_session.id)
+        
+        # 10. 플레이어 초기 유닛 생성 - Scout와 Builder
+        initial_units = await create_starting_units(game_session.id, player.id, start_hex)
+        
+        # 11. AI 초기 유닛 생성
+        for i, ai_player in enumerate(ai_players_data):
+            if i < len(ai_capital_coords):
+                ai_capital_hex = await prisma_client.hexagon.find_unique(
+                    where={
+                        "session_id_q_r_s": {
+                            "session_id": game_session.id,
+                            "q": ai_capital_coords[i][0],
+                            "r": ai_capital_coords[i][1],
+                            "s": ai_capital_coords[i][2]
+                        }
+                    }
+                )
+                
+                if ai_capital_hex:
+                    await create_starting_units(game_session.id, ai_player.id, ai_capital_hex)
+        
+        # 12. 초기 개선 추천 목록 생성
+        suggested_improvements = await get_suggested_improvements(game_session.id, player_capital_coord)
+        
+        # 13. 초기 게임 상태 정의
         initial_state = {
             "gameId": game_session.id,
             "turn": 1,
@@ -712,7 +941,8 @@ async def create_game_session(request: GameSessionCreate):
                     "q": unit.loc_q,
                     "r": unit.loc_r,
                     "s": unit.loc_s
-                }
+                },
+                "charges": unit.charges if hasattr(unit, 'charges') else None
             } for unit in initial_units],
             "diplomacy": {
                 "civs": [],
@@ -734,14 +964,15 @@ async def create_game_session(request: GameSessionCreate):
                 "faith": 1,
                 "foundedReligionId": None,
                 "followerReligionId": None
-            }
+            },
+            "suggestedImprovements": suggested_improvements
         }
         
         # 프론트엔드가 기대하는 응답 형식으로 변경
         game_session_response = GameSessionResponse(
             id=game_session.id,
             playerName=request.playerName,
-            mapType=game_session.map_type,
+            mapType=game_session.map_type_id,
             difficulty=request.difficulty,
             currentTurn=game_session.current_turn,
             gameSpeed=request.gameSpeed,
@@ -821,4 +1052,367 @@ async def get_game_options():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"게임 옵션 조회 중 오류 발생: {str(e)}"
+        )
+
+# 유닛 이동 처리 함수
+async def move_unit(game_id: str, unit_id: str, to_q: int, to_r: int, to_s: int):
+    """유닛을 새로운 위치로 이동시키는 함수"""
+    
+    # 게임 세션 확인
+    game_session = await prisma_client.gamesession.find_unique(
+        where={"id": game_id},
+        include={"players": True}
+    )
+    
+    if not game_session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="존재하지 않는 게임입니다."
+        )
+    
+    # 유닛 정보 조회
+    unit = await prisma_client.unit.find_unique(
+        where={"id": unit_id},
+        include={"owner": True}
+    )
+    
+    if not unit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="유닛을 찾을 수 없습니다."
+        )
+    
+    # 게임 세션과 유닛의 연결 확인
+    if unit.session_id != game_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이 게임에 속한 유닛이 아닙니다."
+        )
+    
+    # 목적지 타일 확인
+    target_hex = await prisma_client.hexagon.find_unique(
+        where={
+            "session_id_q_r_s": {
+                "session_id": game_id,
+                "q": to_q,
+                "r": to_r,
+                "s": to_s
+            }
+        }
+    )
+    
+    if not target_hex:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="이동할 타일이.존재하지 않습니다."
+        )
+    
+    # 이동 불가능한 타일 체크 (산, 바다 등)
+    impassable_terrains = ["Ocean", "Mountain"]
+    if target_hex.terrain_id in impassable_terrains:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이동할 수 없는 지형입니다."
+        )
+    
+    # 현재 위치와 목적지 간의 거리 계산
+    current_pos = (unit.loc_q, unit.loc_r, unit.loc_s)
+    target_pos = (to_q, to_r, to_s)
+    
+    # hex_distance 함수 호출 (이미 정의되어 있음)
+    distance = hex_distance(current_pos, target_pos)
+    
+    # 이동 가능 거리 확인
+    if distance > unit.movement:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"이동 가능한 거리를 초과했습니다. (가능: {unit.movement}, 필요: {distance})"
+        )
+    
+    # 목적지에 다른 아군 유닛이 있는지 확인
+    other_unit = await prisma_client.unit.find_first(
+        where={
+            "session_id": game_id,
+            "loc_q": to_q,
+            "loc_r": to_r,
+            "loc_s": to_s,
+            "NOT": {
+                "id": unit_id
+            }
+        }
+    )
+    
+    if other_unit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="이미 다른 유닛이 있는 타일입니다."
+        )
+    
+    # 출발지 타일에서 유닛 제거
+    from_hex = await prisma_client.hexagon.find_unique(
+        where={
+            "session_id_q_r_s": {
+                "session_id": game_id,
+                "q": unit.loc_q,
+                "r": unit.loc_r,
+                "s": unit.loc_s
+            }
+        }
+    )
+    
+    if from_hex:
+        await prisma_client.hexagon.update(
+            where={
+                "session_id_q_r_s": {
+                    "session_id": game_id,
+                    "q": unit.loc_q,
+                    "r": unit.loc_r,
+                    "s": unit.loc_s
+                }
+            },
+            data={
+                "unit_id": None
+            }
+        )
+    
+    # 유닛의 위치 업데이트
+    updated_unit = await prisma_client.unit.update(
+        where={"id": unit_id},
+        data={
+            "loc_q": to_q,
+            "loc_r": to_r,
+            "loc_s": to_s,
+            "movement": unit.movement - distance,
+            "status": "이동 중" if unit.movement - distance > 0 else "대기"
+        }
+    )
+    
+    # 도착지 타일에 유닛 배치
+    await prisma_client.hexagon.update(
+        where={
+            "session_id_q_r_s": {
+                "session_id": game_id,
+                "q": to_q,
+                "r": to_r,
+                "s": to_s
+            }
+        },
+        data={
+            "unit_id": unit_id
+        }
+    )
+    
+    # 시야 업데이트 - 유닛이 이동한 새 위치 주변 타일을 탐험됨/보임으로 설정
+    # 유닛 주변 1칸까지 모두 보이도록 설정
+    # 모든 인접 타일 가져오기
+    neighboring_hexes = await prisma_client.hexagon.find_many(
+        where={
+            "session_id": game_id,
+            "OR": [
+                {"AND": [
+                    {"q": to_q + dq},
+                    {"r": to_r + dr},
+                    {"s": to_s + ds}
+                ]} for dq, dr, ds in [
+                    (1, 0, -1), (1, -1, 0), (0, -1, 1), 
+                    (-1, 0, 1), (-1, 1, 0), (0, 1, -1)
+                ]
+            ]
+        }
+    )
+    
+    # 시야 업데이트
+    for hex in neighboring_hexes:
+        await prisma_client.hexagon.update(
+            where={
+                "session_id_q_r_s": {
+                    "session_id": game_id,
+                    "q": hex.q,
+                    "r": hex.r,
+                    "s": hex.s
+                }
+            },
+            data={
+                "visible": True,
+                "explored": True
+            }
+        )
+    
+    # 목적지 타일 자체도 보이도록 설정
+    await prisma_client.hexagon.update(
+        where={
+            "session_id_q_r_s": {
+                "session_id": game_id,
+                "q": to_q,
+                "r": to_r,
+                "s": to_s
+            }
+        },
+        data={
+            "visible": True,
+            "explored": True
+        }
+    )
+    
+    # 응답 데이터 구성
+    return {
+        "id": updated_unit.id,
+        "name": updated_unit.unit_type_id,
+        "type": updated_unit.unit_type_id,
+        "typeName": updated_unit.unit_type_id,
+        "hp": updated_unit.hp,
+        "movement": updated_unit.movement,
+        "maxMovement": updated_unit.max_movement,
+        "status": updated_unit.status,
+        "location": {
+            "q": updated_unit.loc_q,
+            "r": updated_unit.loc_r,
+            "s": updated_unit.loc_s
+        }
+    }
+
+# 유닛 이동 API 엔드포인트
+@router.post("/unit/move", response_model=UnitResponse)
+async def unit_move(request: UnitMoveRequest):
+    """유닛 이동 처리 API"""
+    return await move_unit(
+        request.gameId,
+        request.unitId,
+        request.to.q,
+        request.to.r,
+        request.to.s
+    )
+
+# 턴 종료 엔드포인트
+@router.post("/turn/end-turn", response_model=TurnEndResponse)
+async def end_turn(request: TurnEndRequest):
+    """턴 종료 처리"""
+    try:
+        # 턴 종료 처리
+        turn_result = await process_turn_end(request.game_id, request.player_id)
+        
+        # WebSocket 알림 기능 제거, 결과만 반환
+        return turn_result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"턴 종료 처리 중 오류 발생: {str(e)}"
+        )
+
+# 게임 현재 상태 조회 엔드포인트
+@router.get("/state/{game_id}")
+async def get_game_state(game_id: str):
+    """게임 현재 상태 조회"""
+    try:
+        # 게임 세션 정보 조회
+        game_session = await prisma_client.gamesession.find_unique(
+            where={"id": game_id},
+            include={"players": True}
+        )
+        
+        if not game_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="존재하지 않는 게임입니다."
+            )
+        
+        # 게임 시나리오 정보 (목표, 키워드 등)
+        from utils.scenario_manager import get_or_create_scenario, get_turn_info
+        
+        scenario = await get_or_create_scenario(game_id)
+        speed = GameSpeed(game_session.game_mode_id)
+        current_turn = game_session.current_turn
+        
+        # 현재 턴 정보 생성
+        current_phase, objectives, recommended_actions = get_turn_info(scenario, current_turn)
+        turn_year = calculate_turn_year(current_turn, speed)
+        
+        # 플레이어 정보 조회
+        player_data = []
+        for player in game_session.players:
+            cities = await prisma_client.city.find_many(
+                where={
+                    "session_id": game_id,
+                    "owner_player_id": player.id
+                }
+            )
+            
+            units = await prisma_client.unit.find_many(
+                where={
+                    "session_id": game_id,
+                    "owner_player_id": player.id
+                }
+            )
+            
+            player_data.append({
+                "id": player.id,
+                "name": player.civ_type,
+                "is_ai": player.is_ai,
+                "cities": len(cities),
+                "units": len(units)
+            })
+        
+        # 턴 정보 구성
+        turn_info = GameTurnInfo(
+            turn=current_turn,
+            phase=current_phase,
+            year=turn_year,
+            objectives=objectives,
+            recommended_actions=recommended_actions
+        )
+        
+        # 응답 데이터 구성
+        return {
+            "game_id": game_id,
+            "current_turn": current_turn,
+            "map_type": game_session.map_type_id,
+            "game_speed": game_session.game_mode_id,
+            "turn_info": turn_info.dict(),
+            "players": player_data,
+            "status": game_session.status,
+            "created_at": game_session.created_at,
+            "updated_at": game_session.updated_at
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"게임 상태 조회 중 오류 발생: {str(e)}"
+        )
+
+# 목표 완료 엔드포인트
+@router.post("/objective/complete")
+async def complete_objective(game_id: str, objective_id: str, player_id: str):
+    """목표 완료 처리"""
+    try:
+        # 목표 완료 처리
+        from utils.scenario_manager import get_or_create_scenario, check_objective_completion
+        
+        scenario = await get_or_create_scenario(game_id)
+        completed = check_objective_completion(scenario, objective_id)
+        
+        if completed:
+            # 보상 지급 로직 (실제 구현 필요)
+            
+            # 웹소켓으로 목표 완료 알림
+            message = {
+                "type": "objective_completed",
+                "player_id": player_id,
+                "timestamp": datetime.now().isoformat(),
+                "content": {
+                    "objective_id": objective_id,
+                    "description": "목표를 달성했습니다!"
+                }
+            }
+            
+            await ws_manager.broadcast(game_id, message)
+            
+            return {"status": "success", "message": "목표가 완료되었습니다."}
+        else:
+            return {"status": "error", "message": "해당 목표를 찾을 수 없거나 이미 완료되었습니다."}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"목표 완료 처리 중 오류 발생: {str(e)}"
         )
