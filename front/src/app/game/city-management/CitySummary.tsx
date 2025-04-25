@@ -18,7 +18,6 @@ export default function CitySummary({ city }: { city: City }) {
           <span>골드: {city.gold ?? 0}</span>
           <span>과학: {city.science ?? 0}</span>
           <span>문화: {city.culture ?? 0}</span>
-          <span>신앙: {city.faith ?? 0}</span>
         </div>
       </div>
       <div className="flex gap-2 mt-3 md:mt-0">

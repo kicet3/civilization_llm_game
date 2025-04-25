@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
@@ -8,30 +8,97 @@ from typing import Optional
 from models.map import MapType, Difficulty
 
 class GameSpeed(str, Enum):
-    """게임 속도 enum"""
-    FAST = "빠름"     # 100턴
-    NORMAL = "보통"   # 250턴
-    LONG = "장기"     # 500턴
+    """게임 속도 구분"""
+    QUICK = "quick"         # 25턴 (속전속결)
+    STANDARD = "standard"   # 50턴 (중간 템포)
+    EPIC = "epic"           # 100턴 (완전 트리 & 전술)
 
+class GamePhase(str, Enum):
+    """게임 진행 단계"""
+    EARLY = "early"         # 개막기
+    MID = "mid"             # 중반기
+    LATE = "late"           # 종반기
+    FINAL = "final"         # 후반 중기 (100턴 시나리오만)
 
-class Difficulty(str, Enum):
-    EASY   = "easy"
-    NORMAL = "normal"
-    HARD   = "hard"
-
-
+class VictoryType(str, Enum):
+    """승리 유형"""
+    DOMINATION = "domination"   # 정복
+    CULTURAL = "cultural"       # 문화
+    SCIENTIFIC = "scientific"   # 과학
+    DIPLOMATIC = "diplomatic"   # 외교
+    
+class GameState(str, Enum):
+    WAITING = "waiting"
+    ONGOING = "ongoing"
+    FINISHED = "finished"
 
 class GameSessionResponse(BaseModel):
     """게임 세션 응답 모델"""
     id: str
     playerName: str
     mapType: str
-    difficulty: str
+    difficulty: Difficulty
     currentTurn: int
     gameSpeed: str
     createdAt: datetime
     updatedAt: datetime
-    initialState: Optional[Dict[str, Any]] = None  # 초기 게임 상태 추가
+    initialState: Dict[str, Any] = {}
+    
+class GameOptions(BaseModel):
+    """게임 옵션 모델"""
+    mapTypes: List[Dict[str, str]]
+    difficulties: List[Dict[str, str]]
+    civilizations: List[Dict[str, str]]
+    gameSpeeds: List[Dict[str, str]]
+
+class GameOptionsResponse(BaseModel):
+    """게임 옵션 응답 모델"""
+    options: GameOptions
+
+class ScenarioObjective(BaseModel):
+    """시나리오 목표 모델"""
+    id: str
+    description: str
+    completed: bool = False
+    category: str  # exploration, expansion, economy, military, research
+    reward: Dict[str, Any] = {}
+
+class TurnPhaseInfo(BaseModel):
+    """턴 단계별 정보 모델"""
+    phase: GamePhase
+    turn_range: List[int]
+    main_goal: str
+    keywords: List[str]
+    objectives: List[ScenarioObjective]
+
+class GameScenario(BaseModel):
+    """게임 시나리오 모델"""
+    game_id: str
+    speed: GameSpeed
+    phases: List[TurnPhaseInfo]
+    current_phase: GamePhase = GamePhase.EARLY
+    victory_path: Optional[VictoryType] = None
+
+class GameTurnInfo(BaseModel):
+    """턴 정보 모델"""
+    turn: int
+    phase: GamePhase
+    year: int
+    objectives: List[Dict[str, Any]]
+    recommended_actions: List[str]
+
+class TurnEndRequest(BaseModel):
+    """턴 종료 요청 모델"""
+    game_id: str
+    player_id: str
+    
+class TurnEndResponse(BaseModel):
+    """턴 종료 응답 모델"""
+    game_id: str
+    next_turn: int
+    turn_info: GameTurnInfo
+    events: List[Dict[str, Any]] = []
+    ai_actions: List[Dict[str, Any]] = []
 
 class Event(BaseModel):
     """게임 이벤트 모델"""
@@ -65,21 +132,10 @@ class GameSessionCreate(BaseModel):
     playerName: str
     mapType: MapType = MapType.CONTINENTS
     difficulty: Difficulty = Difficulty.NORMAL
-    gameSpeed: str = "normal"  # 추후 enum으로 변경 가능
+    gameSpeed: GameSpeed = GameSpeed.STANDARD
     playerCiv: str  # 선택한 문명 
     civCount: int = Field(default=8, ge=5, le=10)  # 문명 수 제한
 
 
 
-class GameOptions(BaseModel):
-    mapTypes: List[MapType]
-    difficulties: List[Difficulty]
-    civilizations: List[dict]
-    gameModes: List[dict]
-    civTypeMap: dict
-
-class GameOptionsResponse(BaseModel):
-    success: bool
-    data: GameOptions
-    error: Optional[dict] = None
     

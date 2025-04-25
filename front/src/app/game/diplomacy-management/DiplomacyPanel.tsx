@@ -1,56 +1,125 @@
-import React, { useState } from "react";
-import { mockCivs, mockCityStates, mockDiplomacyState, Civ, CityState } from "./mockDiplomacyData";
+import React, { useState, useEffect } from 'react';
+import { HexTile, Civilization } from '@/types/game';
 
-export default function DiplomacyPanel() {
-  const [selectedCiv, setSelectedCiv] = useState<Civ | null>(null);
-  const [selectedCityState, setSelectedCityState] = useState<CityState | null>(null);
-  const [diplomacy, setDiplomacy] = useState(mockDiplomacyState);
+interface DiplomacyPanelProps {
+  mapData?: HexTile[];
+  playerCivId?: string;
+}
 
+export default function DiplomacyPanel({ mapData = [], playerCivId = 'korea' }: DiplomacyPanelProps) {
+  const [selectedCiv, setSelectedCiv] = useState<string | null>(null);
+  const [selectedCityState, setSelectedCityState] = useState<string | null>(null);
+  
+  // 발견된 문명과 도시국가 추출
+  const [discoveredCivs, setDiscoveredCivs] = useState<any[]>([]);
+  const [discoveredCityStates, setDiscoveredCityStates] = useState<any[]>([]);
+  
+  // 최대 표시할 문명 수
+  const maxCivCount = 5;
+  
+  useEffect(() => {
+    // 맵 데이터에서 발견된 문명과 도시국가 추출
+    if (!mapData || !Array.isArray(mapData)) {
+      console.log('맵 데이터가 없거나 배열이 아닙니다.');
+      setDiscoveredCivs([]);
+      setDiscoveredCityStates([]);
+      return;
+    }
+    
+    // 플레이어 문명이 발견한 타일에서 다른 문명 추출
+    const civs = mapData
+      .filter(tile => tile.visible && tile.city && tile.city.owner !== playerCivId)
+      .map(tile => {
+        // 이 타일의 도시 정보 사용
+        const cityData = tile.city;
+        return {
+          id: cityData?.owner || 'unknown',
+          name: cityData?.name || '미확인 도시',
+          population: cityData?.population || 1,
+          location: { q: tile.q, r: tile.r, s: tile.s }
+        };
+      })
+      .filter((civ, index, self) => 
+        // 중복 제거: 같은 owner를 가진 첫 번째 항목만 유지
+        index === self.findIndex((t) => t.id === civ.id)
+      );
+    
+    // 발견된 문명 설정
+    setDiscoveredCivs(civs);
+    
+    // 도시국가 처리는 유사한 로직 (필요에 따라 구현)
+    setDiscoveredCityStates([]);
+  }, [mapData, playerCivId]);
+  
+  // 발견된 문명이 없거나 5개 미만인 경우 미확인 문명 슬롯 추가
+  const civPlaceholders = Array(Math.max(0, maxCivCount - discoveredCivs.length))
+    .fill(null)
+    .map((_, index) => ({
+      id: `placeholder-${index}`,
+      name: '미확인 국가',
+      isPlaceholder: true
+    }));
+  
+  // 발견된 문명과 플레이스홀더 슬롯 합치기 (최대 5개)
+  const civSlots = [...discoveredCivs, ...civPlaceholders].slice(0, maxCivCount);
+  
   return (
-    <div className="p-4 h-full overflow-auto">
-      <h3 className="text-xl font-bold mb-4">외교</h3>
-      <div className="mb-6">
-        <h4 className="font-bold mb-2">AI 문명</h4>
-        <div className="flex flex-wrap gap-3">
-          {mockCivs.map(civ => (
-            <div
-              key={civ.id}
-              className={`p-3 rounded border cursor-pointer w-44 ${selectedCiv?.id === civ.id ? 'border-blue-400 bg-slate-800' : 'border-slate-600 bg-slate-900'}`}
-              onClick={() => setSelectedCiv(civ)}
-            >
-              <div className="font-bold text-base">{civ.name}</div>
-              <div className="text-xs text-gray-400">성향: {civ.personality}</div>
-              <div className="text-xs">관계: {diplomacy.civRelations[civ.id]}</div>
-            </div>
-          ))}
-        </div>
+    <div className="h-full flex flex-col">
+      <div className="p-4 bg-slate-800 border-b border-slate-700">
+        <h2 className="text-2xl font-bold">외교</h2>
       </div>
-      <div className="mb-6">
-        <h4 className="font-bold mb-2">도시국가</h4>
-        <div className="flex flex-wrap gap-3">
-          {mockCityStates.map(cs => (
-            <div
-              key={cs.id}
-              className={`p-3 rounded border cursor-pointer w-44 ${selectedCityState?.id === cs.id ? 'border-purple-400 bg-slate-800' : 'border-slate-600 bg-slate-900'}`}
-              onClick={() => setSelectedCityState(cs)}
-            >
-              <div className="font-bold text-base">{cs.name}</div>
-              <div className="text-xs text-gray-400">유형: {cs.type}</div>
-              <div className="text-xs">호감도: {diplomacy.cityStateRelations[cs.id]}</div>
-              <div className="text-xs">동맹: {diplomacy.cityStateAllies[cs.id] ? 'O' : 'X'}</div>
+      
+      <div className="p-4 flex-1 overflow-auto">
+        {/* 문명 목록 */}
+        <div className="mb-8">
+          <h3 className="text-xl font-bold mb-4">문명</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {civSlots.map((civ) => (
+              <div
+                key={civ.id}
+                className={`p-4 rounded-lg border ${civ.isPlaceholder 
+                  ? 'border-gray-700 bg-gray-800 opacity-50 cursor-not-allowed' 
+                  : selectedCiv === civ.id 
+                    ? 'border-blue-500 bg-blue-900 bg-opacity-20' 
+                    : 'border-gray-700 hover:border-gray-500 cursor-pointer'
+                }`}
+                onClick={() => !civ.isPlaceholder && setSelectedCiv(civ.id === selectedCiv ? null : civ.id)}
+              >
+                <h4 className="font-bold">{civ.name}</h4>
+                {!civ.isPlaceholder && (
+                  <div className="mt-2 text-sm text-gray-400">
+                    <p>인구: {civ.population || '?'}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* 도시국가 목록 (아직 발견한 도시국가가 없으면 비활성화) */}
+        <div className="opacity-50">
+          <h3 className="text-xl font-bold mb-4">도시국가</h3>
+          <p className="text-gray-400">아직 발견한 도시국가가 없습니다.</p>
+        </div>
+        
+        {/* 선택된 문명이 있을 경우 외교 옵션 표시 */}
+        {selectedCiv && (
+          <div className="mt-8 p-4 border border-gray-700 rounded-lg">
+            <h3 className="text-xl font-bold mb-4">{discoveredCivs.find(c => c.id === selectedCiv)?.name}와의 외교</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button className="p-3 bg-slate-700 hover:bg-slate-600 rounded-lg">
+                평화 제안
+              </button>
+              <button className="p-3 bg-slate-700 hover:bg-slate-600 rounded-lg">
+                통상 조약
+              </button>
+              <button className="p-3 bg-red-900 hover:bg-red-800 rounded-lg">
+                전쟁 선포
+              </button>
             </div>
-          ))}
-        </div>
-      </div>
-      {/* 기능 확장: 외교 명령, 무역, 동맹, 비난, 전쟁 등 */}
-      <div className="mt-6">
-        <h4 className="font-bold mb-2">외교 명령/상호작용 (목업)</h4>
-        <div className="flex gap-2 flex-wrap">
-          <button className="bg-blue-700 px-3 py-1 rounded text-xs text-white">무역 제안</button>
-          <button className="bg-green-700 px-3 py-1 rounded text-xs text-white">동맹 요청</button>
-          <button className="bg-yellow-700 px-3 py-1 rounded text-xs text-white">비난</button>
-          <button className="bg-red-700 px-3 py-1 rounded text-xs text-white">전쟁 선언</button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

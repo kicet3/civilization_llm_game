@@ -16,12 +16,13 @@ interface TurnEvent {
   importance: 'low' | 'medium' | 'high';
 }
 
-interface TurnManagerProps {
+export interface TurnManagerProps {
   children?: React.ReactNode;
   turn: number;
   phase: TurnPhase;
-  onEndTurn: () => void;
-  events: { content: string; type: string; turn: number }[];
+  onEndTurn: () => Promise<void>;
+  events: { type: string; content: string; turn: number }[];
+  updateGameData?: () => Promise<void>;
 }
 
 export default function TurnManager({ 
@@ -29,10 +30,11 @@ export default function TurnManager({
   turn, 
   phase, 
   onEndTurn,
-  events = []
+  events = [],
+  updateGameData
 }: TurnManagerProps) {
   // 토스트 메시지 상태
-  const [toast, setToast] = useState<{ message: string; show: boolean }>({ message: '', show: false });
+  const [toast, setToast] = useState<{ message: string; show: boolean; type?: string }>({ message: '', show: false });
   
   // 이펙트 상태(간단한 예시: 도시 성장/유닛 진급 등)
   const [effect, setEffect] = useState<string | null>(null);
@@ -84,14 +86,44 @@ export default function TurnManager({
   }
 
   // 턴 종료 핸들러
-  const handleEndTurn = () => {
-    if (phase !== "player") return;
+  const handleEndTurn = async () => {
+    if (phase !== 'player') return;
     
-    showToast(`턴 ${turn} 종료! 처리 중...`, 2000);
-    setLog(l => [...l, `턴 ${turn} 종료`]);
-    
-    // 턴 종료 로직 실행
-    onEndTurn();
+    try {
+      setToast({
+        message: '턴 종료 중...',
+        show: true,
+        type: 'info'
+      });
+      
+      // 턴 종료 전 게임 데이터 업데이트
+      if (updateGameData) {
+        try {
+          await updateGameData();
+        } catch (error) {
+          console.error('턴 종료 전 데이터 업데이트 실패:', error);
+        }
+      }
+      
+      await onEndTurn();
+      
+      // 효과 애니메이션 표시
+      setEffect('end-turn');
+      setTimeout(() => setEffect(null), 2000);
+      
+      // 토스트 숨기기
+      setToast({
+        message: '',
+        show: false
+      });
+    } catch (error) {
+      console.error('턴 종료 처리 중 오류:', error);
+      setToast({
+        message: '턴 종료 처리 중 오류가 발생했습니다.',
+        show: true,
+        type: 'error'
+      });
+    }
   };
 
   // 턴 숫자에 따른 연도 계산

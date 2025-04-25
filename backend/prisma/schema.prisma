@@ -1,11 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-py"
+  provider                    = "prisma-client-py"
+  recursive_type_depth        = "5"
+  interface                   = "asyncio"
   enable_experimental_decimal = "true"
-  interface = "asyncio"
-  recursive_type_depth = "5"
 }
 
 datasource db {
@@ -13,116 +10,145 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 1. 사용자 및 세션 모델
+model Game {
+  id          String      @id @db.Char(36)
+  userId      String      @db.VarChar(100)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  currentTurn Int         @default(1)
+  mapType     String      @db.VarChar(50)
+  width       Int
+  height      Int
+  gameStates  GameState[]
+}
+
+model GameState {
+  id        Int      @id @default(autoincrement())
+  gameId    String   @db.Char(36)
+  turn      Int
+  stateData Json
+  createdAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id])
+
+  @@index([gameId, turn])
+}
+
 model User {
   id            Int           @id @default(autoincrement())
   username      String        @unique @db.VarChar(50)
   password_hash String        @db.Text
-  created_at    DateTime      @db.DateTime()
-  
+  created_at    DateTime      @db.DateTime(0)
   game_sessions GameSession[] @relation("HostedGames")
   players       Player[]
 }
 
-
-// 3. 메타데이터 모델
 model Tech {
-  id            String            @id @db.VarChar(50)
-  name          String            @db.VarChar(100)
-  era           String?           @db.VarChar(50)
-  cost          Int
-  description   String?           @db.Text
-  
-  game_research GameResearch[]
-  researched_techs ResearchedTech[]
+  id                String             @id @db.VarChar(50)
+  name              String             @db.VarChar(100)
+  era               String?            @db.VarChar(50)
+  cost              Int
+  description       String?            @db.Text
+  game_research     GameResearch[]
   research_progress ResearchProgress[]
+  researched_techs  ResearchedTech[]
+  prerequisites     TechPrerequisite[] @relation("PrereqRelation")
+  dependents        TechPrerequisite[] @relation("DependentRelation")
+}
+
+model TechPrerequisite {
+  techId   String
+  prereqId String
+  prereq   Tech   @relation("PrereqRelation", fields: [prereqId], references: [id])
+  tech     Tech   @relation("DependentRelation", fields: [techId], references: [id])
+
+  @@id([techId, prereqId])
+  @@index([prereqId], map: "TechPrerequisite_prereqId_fkey")
 }
 
 model Policy {
-  id            String           @id @db.VarChar(50)
-  name          String           @db.VarChar(100)
-  tree          String           @db.VarChar(50)
-  culture_cost  Int
-  effect_json   Json?
-  
+  id               String          @id @db.VarChar(50)
+  name             String          @db.VarChar(100)
+  tree             String          @db.VarChar(50)
+  culture_cost     Int
+  effect_json      Json?
   adopted_policies AdoptedPolicy[]
 }
 
 model Doctrine {
-  id            String             @id @db.VarChar(50)
-  name          String             @db.VarChar(100)
-  tier          Int
-  effect_json   Json?
-  
+  id                 String             @id @db.VarChar(50)
+  name               String             @db.VarChar(100)
+  tier               Int
+  effect_json        Json?
   selected_doctrines SelectedDoctrine[]
 }
 
 model UnitType {
-  id              String    @id @db.VarChar(50)
-  name            String    @db.VarChar(100)
-  category        String?   @db.VarChar(50)
+  id              String  @id @db.VarChar(50)
+  name            String  @db.VarChar(100)
+  category        String? @db.VarChar(50)
   move            Int?
   combat_strength Int?
   range           Int?
-  
+  productionCost  Int     @default(1)
   units           Unit[]
 }
 
+model BuildingType {
+  id             String  @id @db.VarChar(50)
+  name           String  @db.VarChar(100)
+  era            String? @db.VarChar(50)
+  productionCost Int
+  effectJson     Json?
+  cities         City[]  @relation("CityBuildings")
+}
+
 model Terrain {
-  id            String      @id @db.VarChar(50)
-  name          String      @db.VarChar(100)
-  yield_json    Json?
-  
-  hexagons      Hexagon[]
+  id         String    @id @db.VarChar(50)
+  name       String    @db.VarChar(100)
+  yield_json Json?
+  hexagons   Hexagon[]
 }
 
 model MapSeed {
-  id            String    @id @default(uuid()) @db.Char(36)
-  gameMode      String    @db.VarChar(50)
-  difficulty    String    @db.VarChar(50)
-  civilization  String    @db.VarChar(50)
-  mapType       String    @db.VarChar(50)
-  civCount      Int       @default(6)
-  seed          BigInt
-  
-  // 시드 생성 시간
-  created_at    DateTime  @default(now())
-  
-  // 선택적으로 게임 세션과 연결 가능
-  game_session  GameSession? @relation(fields: [game_session_id], references: [id])
-  game_session_id String?    @unique @db.Char(36)
-  
-  // 유니크 제약 조건 추가 (필요에 따라 조정 가능)
+  id              String       @id @default(uuid()) @db.Char(36)
+  gameMode        String       @db.VarChar(50)
+  difficulty      String       @db.VarChar(50)
+  civilization    String       @db.VarChar(50)
+  mapType         String       @db.VarChar(50)
+  civCount        Int          @default(6)
+  seed            BigInt
+  created_at      DateTime     @default(now())
+  game_session_id String?      @unique @db.Char(36)
+  game_session    GameSession? @relation(fields: [game_session_id], references: [id])
+
   @@unique([gameMode, difficulty, civilization, mapType, civCount], name: "ux_map_seed_config")
 }
+
 model Resource {
-  id            String      @id @db.VarChar(50)
-  name          String      @db.VarChar(100)
-  type          String      @db.VarChar(50)
-  
-  hexagons      Hexagon[]
+  id       String    @id @db.VarChar(50)
+  name     String    @db.VarChar(100)
+  type     String    @db.VarChar(50)
+  hexagons Hexagon[]
 }
 
-// 4. 맵/타일 상태 모델
 model Hexagon {
-  session_id    String      @db.Char(36)
-  q             Int
-  r             Int
-  s             Int
-  terrain_id    String?     @db.VarChar(50)
-  resource_id   String?     @db.VarChar(50)
-  city_id       Int?
-  unit_id       Int?
-  
-  game_session  GameSession @relation(fields: [session_id], references: [id])
-  terrain       Terrain?    @relation(fields: [terrain_id], references: [id])
-  resource      Resource?   @relation(fields: [resource_id], references: [id])
-  
+  session_id   String      @db.Char(36)
+  q            Int
+  r            Int
+  s            Int
+  terrain_id   String?     @db.VarChar(50)
+  resource_id  String?     @db.VarChar(50)
+  city_id      Int?
+  unit_id      Int?
+  resource     Resource?   @relation(fields: [resource_id], references: [id])
+  game_session GameSession @relation(fields: [session_id], references: [id])
+  terrain      Terrain?    @relation(fields: [terrain_id], references: [id])
+
   @@id([session_id, q, r, s])
+  @@index([resource_id], map: "Hexagon_resource_id_fkey")
+  @@index([terrain_id], map: "Hexagon_terrain_id_fkey")
 }
 
-// 5. 도시 상태 모델
-// 기존 City 모델에 위치 정보 필드 추가
 model City {
   id                     Int               @id @default(autoincrement())
   session_id             String            @db.Char(36)
@@ -132,7 +158,7 @@ model City {
   turns_left             Int?
   food                   Int?
   gold                   Int?
-  production             Int?              
+  production             Int?
   science                Int?
   culture                Int?
   faith                  Int?
@@ -144,267 +170,256 @@ model City {
   culture_to_next_border Int?
   specialization         String?           @db.VarChar(50)
   updated_at             DateTime          @updatedAt
-  
-  // 위치 정보 필드 추가
-  loc_q                  Int?              // 육각형 그리드의 q 좌표
-  loc_r                  Int?              // 육각형 그리드의 r 좌표
-  loc_s                  Int?              // 육각형 그리드의 s 좌표
-  
-  game_session           GameSession       @relation(fields: [session_id], references: [id])
+  loc_q                  Int?
+  loc_r                  Int?
+  loc_s                  Int?
   owner                  Player            @relation(fields: [owner_player_id], references: [id])
+  game_session           GameSession       @relation(fields: [session_id], references: [id])
   production_queue       ProductionQueue[]
+  buildings              BuildingType[]    @relation("CityBuildings")
+
+  @@index([owner_player_id], map: "City_owner_player_id_fkey")
+  @@index([session_id], map: "City_session_id_fkey")
 }
 
 model ProductionQueue {
-  id           Int     @id @default(autoincrement())
-  city_id      Int
-  item_name    String  @db.VarChar(100)
-  turns_left   Int
-  queue_order  Int
-  
-  city         City    @relation(fields: [city_id], references: [id])
+  id          Int    @id @default(autoincrement())
+  city_id     Int
+  turns_left  Int
+  queue_order Int
+  itemId      String @db.VarChar(50)
+  itemType    String @db.VarChar(10)
+  city        City   @relation(fields: [city_id], references: [id])
+
+  @@index([city_id], map: "ProductionQueue_city_id_fkey")
 }
 
-// 6. 유닛 상태 모델
 model Unit {
-  id                Int           @id @default(autoincrement())
-  session_id        String        @db.Char(36)
-  owner_player_id   Int
-  unit_type_id      String        @db.VarChar(50)
-  hp                Int?
-  movement          Int?
-  max_movement      Int?
-  status            String?       @db.VarChar(50)
-  loc_q             Int?
-  loc_r             Int?
-  loc_s             Int?
-  
-  game_session      GameSession   @relation(fields: [session_id], references: [id])
-  owner             Player        @relation(fields: [owner_player_id], references: [id])
-  unit_type         UnitType      @relation(fields: [unit_type_id], references: [id])
+  id              Int         @id @default(autoincrement())
+  session_id      String      @db.Char(36)
+  owner_player_id Int
+  unit_type_id    String      @db.VarChar(50)
+  hp              Int?
+  movement        Int?
+  max_movement    Int?
+  status          String?     @db.VarChar(50)
+  loc_q           Int?
+  loc_r           Int?
+  loc_s           Int?
+  owner           Player      @relation(fields: [owner_player_id], references: [id])
+  game_session    GameSession @relation(fields: [session_id], references: [id])
+  unit_type       UnitType    @relation(fields: [unit_type_id], references: [id])
+
+  @@index([owner_player_id], map: "Unit_owner_player_id_fkey")
+  @@index([session_id], map: "Unit_session_id_fkey")
+  @@index([unit_type_id], map: "Unit_unit_type_id_fkey")
 }
 
-// 7. 연구 상태 모델
 model GameResearch {
-  session_id       String            @id @db.Char(36)
-  current_tech_id  String?           @db.VarChar(50)
-  
-  game_session     GameSession       @relation(fields: [session_id], references: [id])
-  current_tech     Tech?             @relation(fields: [current_tech_id], references: [id])
-  
-  researched_techs ResearchedTech[]
+  session_id        String             @id @db.Char(36)
+  current_tech_id   String?            @db.VarChar(50)
+  current_tech      Tech?              @relation(fields: [current_tech_id], references: [id])
+  game_session      GameSession        @relation(fields: [session_id], references: [id])
   research_progress ResearchProgress[]
+  researched_techs  ResearchedTech[]
+
+  @@index([current_tech_id], map: "GameResearch_current_tech_id_fkey")
 }
 
 model ResearchedTech {
-  session_id    String        @db.Char(36)
-  tech_id       String        @db.VarChar(50)
-  
-  game_research GameResearch  @relation(fields: [session_id], references: [session_id])
-  tech          Tech          @relation(fields: [tech_id], references: [id])
-  
+  session_id    String       @db.Char(36)
+  tech_id       String       @db.VarChar(50)
+  game_research GameResearch @relation(fields: [session_id], references: [session_id])
+  tech          Tech         @relation(fields: [tech_id], references: [id])
+
   @@id([session_id, tech_id])
+  @@index([tech_id], map: "ResearchedTech_tech_id_fkey")
 }
 
 model ResearchProgress {
-  session_id    String        @db.Char(36)
-  tech_id       String        @db.VarChar(50)
+  session_id    String       @db.Char(36)
+  tech_id       String       @db.VarChar(50)
   progress      Int
-  
-  game_research GameResearch  @relation(fields: [session_id], references: [session_id])
-  tech          Tech          @relation(fields: [tech_id], references: [id])
-  
+  game_research GameResearch @relation(fields: [session_id], references: [session_id])
+  tech          Tech         @relation(fields: [tech_id], references: [id])
+
   @@id([session_id, tech_id])
+  @@index([tech_id], map: "ResearchProgress_tech_id_fkey")
 }
 
-// 8. 정책 상태 모델
 model GamePolicies {
-  session_id      String          @id @db.Char(36)
-  culture         Int
-  
-  game_session    GameSession     @relation(fields: [session_id], references: [id])
+  session_id       String          @id @db.Char(36)
+  culture          Int
   adopted_policies AdoptedPolicy[]
+  game_session     GameSession     @relation(fields: [session_id], references: [id])
 }
 
 model AdoptedPolicy {
-  session_id     String         @db.Char(36)
-  policy_id      String         @db.VarChar(50)
-  
-  game_policies  GamePolicies   @relation(fields: [session_id], references: [session_id])
-  policy         Policy         @relation(fields: [policy_id], references: [id])
-  
+  session_id    String       @db.Char(36)
+  policy_id     String       @db.VarChar(50)
+  policy        Policy       @relation(fields: [policy_id], references: [id])
+  game_policies GamePolicies @relation(fields: [session_id], references: [session_id])
+
   @@id([session_id, policy_id])
+  @@index([policy_id], map: "AdoptedPolicy_policy_id_fkey")
 }
 
-// 9. 종교 상태 모델
 model GameReligion {
-  session_id        String              @id @db.Char(36)
-  faith             Int
-  
-  game_session      GameSession         @relation(fields: [session_id], references: [id])
-  founded_religions FoundedReligion[]
+  session_id         String             @id @db.Char(36)
+  faith              Int
+  founded_religions  FoundedReligion[]
+  game_session       GameSession        @relation(fields: [session_id], references: [id])
   selected_doctrines SelectedDoctrine[]
 }
 
 model FoundedReligion {
-  session_id      String        @db.Char(36)
-  religion_name   String        @db.VarChar(100)
-  founder         String?       @db.VarChar(100)
-  
-  game_religion   GameReligion  @relation(fields: [session_id], references: [session_id])
-  
+  session_id    String       @db.Char(36)
+  religion_name String       @db.VarChar(100)
+  founder       String?      @db.VarChar(100)
+  game_religion GameReligion @relation(fields: [session_id], references: [session_id])
+
   @@id([session_id, religion_name])
 }
 
 model SelectedDoctrine {
-  session_id      String        @db.Char(36)
-  doctrine_id     String        @db.VarChar(50)
-  
-  game_religion   GameReligion  @relation(fields: [session_id], references: [session_id])
-  doctrine        Doctrine      @relation(fields: [doctrine_id], references: [id])
-  
+  session_id    String       @db.Char(36)
+  doctrine_id   String       @db.VarChar(50)
+  doctrine      Doctrine     @relation(fields: [doctrine_id], references: [id])
+  game_religion GameReligion @relation(fields: [session_id], references: [session_id])
+
   @@id([session_id, doctrine_id])
+  @@index([doctrine_id], map: "SelectedDoctrine_doctrine_id_fkey")
 }
 
-// 10. 외교 상태 모델
 model CivRelation {
-  session_id        String        @db.Char(36)
-  player_id         Int
-  target_player_id  Int
-  status            String?       @db.VarChar(20)
-  relation_value    Int?
-  
-  game_session      GameSession   @relation(fields: [session_id], references: [id])
-  player            Player        @relation("SourcePlayer", fields: [player_id], references: [id])
-  target_player     Player        @relation("TargetPlayer", fields: [target_player_id], references: [id])
-  
+  session_id       String      @db.Char(36)
+  player_id        Int
+  target_player_id Int
+  status           String?     @db.VarChar(20)
+  relation_value   Int?
+  player           Player      @relation("SourcePlayer", fields: [player_id], references: [id])
+  game_session     GameSession @relation(fields: [session_id], references: [id])
+  target_player    Player      @relation("TargetPlayer", fields: [target_player_id], references: [id])
+
   @@id([session_id, player_id, target_player_id])
+  @@index([player_id], map: "CivRelation_player_id_fkey")
+  @@index([target_player_id], map: "CivRelation_target_player_id_fkey")
 }
 
 model CityStateRelation {
-  session_id      String        @db.Char(36)
-  city_state_id   Int
-  player_id       Int
-  influence       Int?
-  is_allied       Boolean?      @db.TinyInt
-  
-  game_session    GameSession   @relation(fields: [session_id], references: [id])
-  player          Player        @relation(fields: [player_id], references: [id])
-  
+  session_id    String      @db.Char(36)
+  city_state_id Int
+  player_id     Int
+  influence     Int?
+  is_allied     Boolean?
+  player        Player      @relation(fields: [player_id], references: [id])
+  game_session  GameSession @relation(fields: [session_id], references: [id])
+
   @@id([session_id, city_state_id, player_id])
+  @@index([player_id], map: "CityStateRelation_player_id_fkey")
 }
 
-// 11. 로그 & 이벤트 모델
 model GameEvent {
-  id            Int           @id @default(autoincrement())
-  session_id    String        @db.Char(36)
-  turn_number   Int?
-  event_type    String?       @db.VarChar(50)
-  event_data    Json?
-  created_at    DateTime      @default(now())
-  
-  game_session  GameSession   @relation(fields: [session_id], references: [id])
+  id           Int         @id @default(autoincrement())
+  session_id   String      @db.Char(36)
+  turn_number  Int?
+  event_type   String?     @db.VarChar(50)
+  event_data   Json?
+  created_at   DateTime    @default(now())
+  game_session GameSession @relation(fields: [session_id], references: [id])
+
+  @@index([session_id], map: "GameEvent_session_id_fkey")
 }
 
-
-// 아래 내용을 기존 schema.prisma 파일에 추가하세요
-
-// 게임 모드 테이블
 model GameMode {
-  id            String    @id @db.VarChar(50)
-  name          String    @db.VarChar(100)
+  id            String        @id @db.VarChar(50)
+  name          String        @db.VarChar(100)
   turns         Int
-  estimatedTime String    @db.VarChar(50)
-  description   String?   @db.Text
-  
-  game_sessions GameSession[] // 게임 세션과의 관계
+  estimatedTime String        @db.VarChar(50)
+  description   String?       @db.Text
+  game_sessions GameSession[]
 }
 
-// 난이도 테이블
 model Difficulty {
-  id             String    @id @db.VarChar(50)
-  name           String    @db.VarChar(100)
-  description    String?   @db.Text
-  aiBonus        String?   @db.VarChar(100)
-  playerPenalty  String?   @db.VarChar(100)
-  
-  game_sessions GameSession[] // 게임 세션과의 관계
+  id            String        @id @db.VarChar(50)
+  name          String        @db.VarChar(100)
+  description   String?       @db.Text
+  aiBonus       String?       @db.VarChar(100)
+  playerPenalty String?       @db.VarChar(100)
+  game_sessions GameSession[]
 }
 
-// 문명 테이블
 model Civilization {
-  id              String    @id @db.VarChar(50)
-  name            String    @db.VarChar(100)
-  leader          String    @db.VarChar(100)
-  specialAbility  String?   @db.Text
-  specialUnit     String?   @db.VarChar(100)
-  specialBuilding String?   @db.VarChar(100)
-  playStyle       String?   @db.VarChar(100)
-  
-  players Player[] // 플레이어와의 관계
-}
-
-// 지도 유형 테이블
-model MapType {
-  id           String    @id @db.VarChar(50)
-  name         String    @db.VarChar(100)
-  description  String?   @db.Text
-  features     String?   @db.Text
-  
-  game_sessions GameSession[] // 게임 세션과의 관계
-}
-
-// 기존 GameSession 모델 수정
-model GameSession {
-  id              String        @id @default(uuid()) @db.Char(36)
-  host_user_id    Int
-  host_user       User          @relation("HostedGames", fields: [host_user_id], references: [id])
-  map_type_id     String        @db.VarChar(50) // 추가된 필드
-  map_type        MapType       @relation(fields: [map_type_id], references: [id]) // 추가된 관계
-  game_mode_id    String        @db.VarChar(50) // 추가된 필드
-  game_mode       GameMode      @relation(fields: [game_mode_id], references: [id]) // 추가된 관계
-  difficulty_id   String        @db.VarChar(50) // 추가된 필드
-  difficulty      Difficulty    @relation(fields: [difficulty_id], references: [id]) // 추가된 관계
-  civ_count       Int           @default(6) // 추가된 필드 - 문명 수
-  seed            BigInt
-  current_turn    Int           @default(1)
-  current_player  Int
-  status          String        @default("ongoing") @db.VarChar(20)
-  created_at      DateTime
-  updated_at      DateTime      @updatedAt
-  
+  id              String   @id @db.VarChar(50)
+  name            String   @db.VarChar(100)
+  leader          String   @db.VarChar(100)
+  specialAbility  String?  @db.Text
+  specialUnit     String?  @db.VarChar(100)
+  specialBuilding String?  @db.VarChar(100)
+  playStyle       String?  @db.VarChar(100)
   players         Player[]
-  hexagons        Hexagon[]
-  cities          City[]
-  units           Unit[]
-  game_research   GameResearch?
-  game_policies   GamePolicies?
-  game_religion   GameReligion?
-  game_events     GameEvent[]
-  civ_relations   CivRelation[]
-  city_state_relations CityStateRelation[]
-  
-  map_seed      MapSeed?
 }
 
-// 기존 Player 모델 수정
+model MapType {
+  id            String        @id @db.VarChar(50)
+  name          String        @db.VarChar(100)
+  description   String?       @db.Text
+  features      String?       @db.Text
+  game_sessions GameSession[]
+}
+
+model GameSession {
+  id                   String              @id @default(uuid()) @db.Char(36)
+  host_user_id         Int
+  map_type_id          String              @db.VarChar(50)
+  game_mode_id         String              @db.VarChar(50)
+  difficulty_id        String              @db.VarChar(50)
+  civ_count            Int                 @default(6)
+  seed                 BigInt
+  current_turn         Int                 @default(1)
+  current_player       Int
+  status               String              @default("ongoing") @db.VarChar(20)
+  created_at           DateTime
+  updated_at           DateTime            @updatedAt
+  cities               City[]
+  city_state_relations CityStateRelation[]
+  civ_relations        CivRelation[]
+  game_events          GameEvent[]
+  game_policies        GamePolicies?
+  game_religion        GameReligion?
+  game_research        GameResearch?
+  difficulty           Difficulty          @relation(fields: [difficulty_id], references: [id])
+  game_mode            GameMode            @relation(fields: [game_mode_id], references: [id])
+  host_user            User                @relation("HostedGames", fields: [host_user_id], references: [id])
+  map_type             MapType             @relation(fields: [map_type_id], references: [id])
+  hexagons             Hexagon[]
+  map_seed             MapSeed?
+  players              Player[]
+  units                Unit[]
+
+  @@index([difficulty_id], map: "GameSession_difficulty_id_fkey")
+  @@index([game_mode_id], map: "GameSession_game_mode_id_fkey")
+  @@index([host_user_id], map: "GameSession_host_user_id_fkey")
+  @@index([map_type_id], map: "GameSession_map_type_id_fkey")
+}
+
 model Player {
-  id            Int           @id @default(autoincrement())
-  session_id    String        @db.Char(36)
-  user_id       Int
-  civ_id        String        @db.VarChar(50) // 변경된 필드 (civ_type -> civ_id)
-  civilization  Civilization  @relation(fields: [civ_id], references: [id]) // 추가된 관계
-  is_ai         Boolean       @default(false) @db.TinyInt
-  player_index  Int
-  
-  game_session  GameSession   @relation(fields: [session_id], references: [id])
-  user          User          @relation(fields: [user_id], references: [id])
-  cities        City[]
-  units         Unit[]
-  
-  source_relations      CivRelation[] @relation("SourcePlayer")
-  target_relations      CivRelation[] @relation("TargetPlayer")
-  city_state_relations  CityStateRelation[]
-  
+  id                   Int                 @id @default(autoincrement())
+  session_id           String              @db.Char(36)
+  user_id              Int
+  civ_id               String              @db.VarChar(50)
+  civilization         Civilization        @relation(fields: [civ_id], references: [id])
+  is_ai                Boolean             @default(false)
+  player_index         Int
+  cities               City[]
+  city_state_relations CityStateRelation[]
+  source_relations     CivRelation[]       @relation("SourcePlayer")
+  target_relations     CivRelation[]       @relation("TargetPlayer")
+  game_session         GameSession         @relation(fields: [session_id], references: [id])
+  user                 User                @relation(fields: [user_id], references: [id])
+  units                Unit[]
+
   @@unique([session_id, player_index], name: "ux_player_order")
+  @@index([civ_id], map: "Player_civ_id_fkey")
+  @@index([user_id], map: "Player_user_id_fkey")
 }

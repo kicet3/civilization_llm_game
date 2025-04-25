@@ -1,0 +1,148 @@
+[
+  {
+    "title": "초반 안정화 과학 승리 전략",
+    "description": "도시 수를 늘리기보다, 연구소와 공장을 집중적으로 운영해 기술 우위를 확보하는 전략입니다.",
+    "victory_type": "science",
+    "strategy_steps": [
+      "도예 → 채굴 → 석조술 → 산업화 → 과학방법론 → 현대물리학 순으로 기술을 연구합니다.",
+      "도시 수는 2~3개로 제한하고, 각 도시는 공장과 연구소 건설을 최우선으로 합니다.",
+      "시민은 과학자 전문직에 우선 배정하여 기술 속도를 높입니다.",
+      "탱크나 전투기 등 현대 유닛은 최소한만 보유하고, 방어에 집중합니다.",
+      "금 수입이 부족할 경우 시장과 은행을 건설하여 보완합니다."
+    ],
+    "recommended_techs": [
+      "Pottery",
+      "Mining",
+      "Masonry",
+      "Industrialization",
+      "ScientificMethod",
+      "ModernPhysics"
+    ],
+    "recommended_buildings": [
+      "Factory",
+      "ResearchLab",
+      "Market",
+      "Bank"
+    ],
+    "recommended_units": [
+      "Crossbowman",
+      "Musketman",
+      "Tank"
+    ]
+  },
+  {
+    "title": "탱크 중심의 정복 승리 전략",
+    "description": "중세 후반부터 병력 생산에 집중하여 근대~현대 초반에 강력한 탱크 병력으로 정복하는 전략입니다.",
+    "victory_type": "domination",
+    "strategy_steps": [
+      "채굴 → 석조술 → 산업화 → 화약 → 탄도학 → 내연기관 순으로 기술을 연구합니다.",
+      "수도는 군사 유닛 생산에 집중하고, 공장 → 병영 → 탱크 순으로 생산합니다.",
+      "궁병 → 석궁병 → 머스킷병 → 탱크로 유닛을 교체하며 전투력을 유지합니다.",
+      "AI의 수도 또는 방어 건물이 없는 도시에 우선 공격을 가합니다.",
+      "전투 후에는 도시 안정화를 위해 바로 건설자나 문화 건물을 배치합니다."
+    ],
+    "recommended_techs": [
+      "Mining",
+      "Masonry",
+      "Gunpowder",
+      "Ballistics",
+      "Industrialization",
+      "Combustion"
+    ],
+    "recommended_buildings": [
+      "Factory",
+      "Barracks",
+      "Walls"
+    ],
+    "recommended_units": [
+      "Knight",
+      "Musketman",
+      "Tank"
+    ]
+  },
+  {
+    "title": "도시 3개 기반 문화 승리 전략",
+    "description": "도시를 3개만 건설하여 성장과 문화 건물에 집중, 안정적인 문화 수치로 승리를 노립니다.",
+    "victory_type": "culture",
+    "strategy_steps": [
+      "도예 → 시장 → 경제학 → 전기 → 라디오 순으로 연구합니다.",
+      "모든 도시에 방송국을 건설하고, 가능한 한 인구가 높은 도시에 우선 건설합니다.",
+      "건설자 우선으로 주변 타일을 개발하고, 금화 수입을 문화로 전환합니다.",
+      "전쟁은 피하며, 최소 병력만 유지합니다.",
+      "전투기 등 원거리 방어 유닛을 현대에 배치하여 안정성을 확보합니다."
+    ],
+    "recommended_techs": [
+      "Pottery",
+      "Market",
+      "Economics",
+      "Electricity",
+      "Radio"
+    ],
+    "recommended_buildings": [
+      "Market",
+      "BroadcastTower",
+      "Bank"
+    ],
+    "recommended_units": [
+      "Crossbowman",
+      "Fighter"
+    ]
+  },
+  {
+    "title": "과학 + 생산 병행 전략",
+    "description": "생산력을 확보한 후 연구소와 전투 유닛을 동시에 확보하여 방어와 과학 승리를 동시에 추구합니다.",
+    "victory_type": "science",
+    "strategy_steps": [
+      "산업화 → 공장 → 과학방법론 → 연구소 순으로 연구합니다.",
+      "도시 수는 3~4개로 확장하며, 각 도시는 생산/과학 건물 중심으로 구성합니다.",
+      "병력은 머스킷병/대포를 중반에 확보하고, 현대에는 탱크로 교체합니다.",
+      "공장은 전체 도시에 우선 건설하고, 다음으로 연구소를 건설합니다.",
+      "수비가 필요한 도시는 성벽 + 대포 + 궁병 배치로 방어력을 유지합니다."
+    ],
+    "recommended_techs": [
+      "Industrialization",
+      "Factory",
+      "ScientificMethod",
+      "ResearchLab",
+      "Ballistics"
+    ],
+    "recommended_buildings": [
+      "Factory",
+      "ResearchLab",
+      "Walls"
+    ],
+    "recommended_units": [
+      "Musketman",
+      "Cannon",
+      "Tank"
+    ]
+  },
+  {
+    "title": "공격적인 문명 견제 전략",
+    "description": "주변 AI가 공격적인 문명일 때 선제 방어와 반격을 준비하는 플레이 방식입니다.",
+    "victory_type": "defense",
+    "strategy_steps": [
+      "도시 주변에 성벽을 빠르게 건설하고, 궁병 → 석궁병 → 머스킷병으로 방어 유닛을 강화합니다.",
+      "AI의 군사 행동이 감지되면 병력을 집중 배치하고 선제 방어에 나섭니다.",
+      "전투 후 병력을 유지하며, 역공 시에는 탱크 유닛을 활용합니다.",
+      "생산력이 높은 도시는 병영 + 공장 + 병력 순으로 운영합니다.",
+      "도시 간 연결을 위해 도로를 건설하고, 이동 효율을 극대화합니다."
+    ],
+    "recommended_techs": [
+      "Masonry",
+      "Ballistics",
+      "Combustion",
+      "Industrialization"
+    ],
+    "recommended_buildings": [
+      "Walls",
+      "Factory",
+      "Barracks"
+    ],
+    "recommended_units": [
+      "Crossbowman",
+      "Cannon",
+      "Tank"
+    ]
+  }
+]

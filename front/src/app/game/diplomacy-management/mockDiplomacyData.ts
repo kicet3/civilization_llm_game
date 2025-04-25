@@ -4,12 +4,14 @@ export interface Civ {
   id: string;
   name: string;
   personality: string;
+  discovered: boolean;
 }
 
 export interface CityState {
   id: string;
   name: string;
   type: string;
+  discovered: boolean;
 }
 
 export interface DiplomacyState {
@@ -19,16 +21,16 @@ export interface DiplomacyState {
 }
 
 export const mockCivs: Civ[] = [
-  { id: "korea", name: "한국", personality: "과학/평화적" },
-  { id: "japan", name: "일본", personality: "정복/공격적" },
-  { id: "france", name: "프랑스", personality: "문화/외교적" },
-  { id: "germany", name: "독일", personality: "공업/정복" },
+  { id: "korea", name: "한국", personality: "과학/평화적", discovered: true },
+  { id: "japan", name: "일본", personality: "정복/공격적", discovered: true },
+  { id: "france", name: "프랑스", personality: "문화/외교적", discovered: false },
+  { id: "germany", name: "독일", personality: "공업/정복", discovered: false },
 ];
 
 export const mockCityStates: CityState[] = [
-  { id: "cs1", name: "서울", type: "문화" },
-  { id: "cs2", name: "홍콩", type: "상업" },
-  { id: "cs3", name: "바티칸", type: "종교" },
+  { id: "cs1", name: "서울", type: "문화", discovered: true },
+  { id: "cs2", name: "홍콩", type: "상업", discovered: false },
+  { id: "cs3", name: "바티칸", type: "종교", discovered: true },
 ];
 
 export const mockDiplomacyState: DiplomacyState = {
