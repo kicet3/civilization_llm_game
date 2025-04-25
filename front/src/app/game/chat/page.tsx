@@ -529,13 +529,13 @@ export default function GameChatPage() {
       ) : (
         // 분할 화면 (조언/실행)
         <div className={cn(
-          "flex-1 flex",
+          "flex-1 flex overflow-hidden",
           isMobile ? "flex-col" : "flex-row" // 모바일에서는 위아래로, 데스크톱에서는 좌우로 분할
         )}>
           {/* 조언 패널 */}
           <div 
             className={cn(
-              "flex-1 overflow-auto p-4 space-y-4 border-r border-slate-700",
+              "flex-1 overflow-hidden p-4 space-y-4 border-r border-slate-700",
               isMobile && activeTab !== 'advice' && "hidden"
             )}
           >
