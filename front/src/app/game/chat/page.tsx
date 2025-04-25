@@ -2,18 +2,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Send, User, CornerDownLeft, AlertTriangle, Info, X } from 'lucide-react';
+import { Send, User, CornerDownLeft, AlertTriangle, Info, X, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-interface ChatMessage {
-  type: 'chat' | 'system' | 'event' | 'error';
-  player_id: string;
-  timestamp: string;
-  content: {
-    text: string;
-    is_ai?: boolean;
-  };
-}
+import websocketService, { ChatMessage } from '@/services/websocketService';
+import llmService from '@/services/llmService';
+import gameService from '@/services/gameService';
 
 export default function GameChatPage() {
   const router = useRouter();
@@ -28,8 +21,9 @@ export default function GameChatPage() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false); // 오프라인 모드 상태
   
-  const ws = useRef<WebSocket | null>(null);
+  const ws = useRef<typeof websocketService | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // 웹소켓 연결 설정
@@ -51,15 +45,41 @@ export default function GameChatPage() {
       }
     ]);
     
+    // LLM 서비스 초기화 (폴백용)
+    initializeLLMService();
+    
     // 웹소켓 연결
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/${gameId}/${playerId}`;
-    console.log(`웹소켓 연결 시도: ${wsUrl}`);
+    const handleWebSocketMessage = (message: ChatMessage) => {
+      console.log('수신된 메시지:', message);
+      
+      // 타이핑 메시지 처리
+      if (message.type === 'typing') {
+        setIsTyping(message.content.is_typing || false);
+        return;
+      }
+      
+      // AI가 응답 중일 때 타이핑 표시 제거
+      if (message.player_id === 'ai_advisor' && message.content.is_ai) {
+        setIsTyping(false);
+      }
+      
+      // 시스템 메시지 처리
+      if (message.type === 'system') {
+        // 오프라인 모드 관련 메시지인 경우 상태 업데이트
+        if (message.content.text.includes('오프라인 모드')) {
+          setOfflineMode(true);
+        }
+      }
+      
+      // 메시지 목록에 추가
+      setChatMessages(prev => [...prev, message]);
+    };
     
-    ws.current = new WebSocket(wsUrl);
-    
-    ws.current.onopen = () => {
+    // 웹소켓 연결 성공 처리
+    const handleWebSocketOpen = () => {
       console.log('웹소켓 연결 성공');
       setConnected(true);
+      setOfflineMode(false);
       setError(null);
       
       // 연결 성공 메시지 추가
@@ -71,85 +91,65 @@ export default function GameChatPage() {
           text: '채팅 서버에 연결되었습니다. 이제 명령을 입력할 수 있습니다.'
         }
       }]);
-      
-      // 핑-퐁 메시지로 연결 유지
-      const pingInterval = setInterval(() => {
-        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send('ping');
-        }
-      }, 30000); // 30초마다 핑
-      
-      return () => clearInterval(pingInterval);
     };
     
-    ws.current.onmessage = (event) => {
-      // 핑-퐁 메시지 처리
-      if (event.data === 'pong') {
-        console.log('pong 수신');
-        return;
-      }
-      
-      try {
-        const data = JSON.parse(event.data);
-        console.log('수신된 메시지:', data);
-        
-        // 채팅 메시지 처리
-        if (data.type === 'chat') {
-          // AI가 응답 중일 때 타이핑 표시 제거
-          if (data.player_id === 'ai_advisor' && data.content.is_ai) {
-            setIsTyping(false);
-          }
-          
-          setChatMessages(prev => [...prev, data]);
-        } 
-        // 메시지 히스토리 처리
-        else if (data.type === 'message_history') {
-          if (Array.isArray(data.messages)) {
-            setChatMessages(prev => {
-              // 시스템 메시지는 유지하고 히스토리 추가
-              const systemMessages = prev.filter(msg => msg.type === 'system');
-              return [...systemMessages, ...data.messages];
-            });
-          }
-        }
-        // 게임 이벤트 처리
-        else if (data.type === 'game_action' || data.type === 'event') {
-          setChatMessages(prev => [...prev, {
-            type: 'event',
-            player_id: data.player_id,
-            timestamp: data.timestamp,
-            content: {
-              text: data.content.description || JSON.stringify(data.content)
-            }
-          }]);
-        }
-      } catch (e) {
-        console.error('메시지 파싱 오류:', e);
-        console.log('원본 메시지:', event.data);
-      }
-    };
-    
-    ws.current.onclose = (event) => {
+    // 웹소켓 연결 종료 처리
+    const handleWebSocketClose = (event: CloseEvent) => {
       console.log('웹소켓 연결 종료:', event.code, event.reason);
       setConnected(false);
       
-      // 자동 재연결 시도하지 않음 - 에러 메시지만 표시
-      setError('채팅 서버와의 연결이 종료되었습니다. 페이지를 새로고침하여 다시 연결해주세요.');
+      // 오프라인 모드가 아니면 에러 메시지 표시
+      if (!offlineMode) {
+        setError('채팅 서버와의 연결이 종료되었습니다. 오프라인 모드로 전환되었습니다.');
+      }
     };
     
-    ws.current.onerror = (event) => {
+    // 웹소켓 에러 처리
+    const handleWebSocketError = (event: Event) => {
       console.error('웹소켓 에러:', event);
       setConnected(false);
-      setError('채팅 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
+      
+      // 오프라인 모드가 아니면 에러 메시지 표시
+      if (!offlineMode) {
+        setError('채팅 서버에 연결할 수 없습니다. 오프라인 모드로 전환되었습니다.');
+      }
     };
+    
+    // 웹소켓 서비스 초기화 및 연결
+    ws.current = websocketService.connect(
+      gameId,
+      playerId,
+      {
+        onOpen: handleWebSocketOpen,
+        onMessage: handleWebSocketMessage,
+        onClose: handleWebSocketClose,
+        onError: handleWebSocketError
+      },
+      true // LLM 폴백 사용
+    );
     
     // 컴포넌트 언마운트 시 웹소켓 연결 종료
     return () => {
       if (ws.current) {
-        ws.current.close();
+        websocketService.disconnect();
       }
     };
   }, [gameId, playerId]);
+  
+  // LLM 서비스 초기화
+  const initializeLLMService = async () => {
+    try {
+      // 게임 상태 정보 가져오기
+      const gameState = await gameService.getGameState().catch(() => null);
+      
+      // 게임 상태 정보가 있으면 LLM 서비스에 업데이트
+      if (gameState) {
+        llmService.updateGameContext(gameState);
+      }
+    } catch (error) {
+      console.error('LLM 서비스 초기화 오류:', error);
+    }
+  };
   
   // 채팅 메시지 자동 스크롤
   useEffect(() => {
@@ -157,27 +157,100 @@ export default function GameChatPage() {
   }, [chatMessages]);
   
   // 메시지 전송 함수
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!message.trim() || !connected || !ws.current) return;
+    if (!message.trim()) return;
     
-    // 메시지 객체 생성
-    const chatMessage = {
-      type: 'chat',
-      content: {
-        text: message.trim()
-      }
-    };
-    
-    // 웹소켓으로 메시지 전송
-    ws.current.send(JSON.stringify(chatMessage));
-    
-    // AI 타이핑 표시 활성화
-    setIsTyping(true);
-    
-    // 메시지 입력창 초기화
-    setMessage('');
+    try {
+      // 사용자 메시지 설정
+      const userMessage = message.trim();
+      setMessage(''); // 입력창 초기화
+      
+      // 웹소켓 서비스를 통해 메시지 전송
+      await websocketService.sendChatMessage(userMessage);
+    } catch (error) {
+      console.error('메시지 전송 중 오류:', error);
+      
+      // 오류 메시지 추가
+      setChatMessages(prev => [
+        ...prev,
+        {
+          type: 'error',
+          player_id: 'system',
+          timestamp: new Date().toISOString(),
+          content: {
+            text: '메시지 전송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+          }
+        }
+      ]);
+    }
+  };
+  
+  // 서버 재연결 시도
+  const handleReconnect = () => {
+    if (ws.current && gameId && playerId) {
+      // 기존 연결 해제 후 재연결
+      websocketService.disconnect();
+      
+      // 재연결 메시지 표시
+      setChatMessages(prev => [
+        ...prev,
+        {
+          type: 'system',
+          player_id: 'system',
+          timestamp: new Date().toISOString(),
+          content: {
+            text: '서버에 재연결을 시도합니다...'
+          }
+        }
+      ]);
+      
+      // 웹소켓 재연결
+      websocketService.connect(
+        gameId,
+        playerId,
+        {
+          onOpen: () => {
+            setConnected(true);
+            setOfflineMode(false);
+            setError(null);
+            
+            setChatMessages(prev => [...prev, {
+              type: 'system',
+              player_id: 'system',
+              timestamp: new Date().toISOString(),
+              content: {
+                text: '채팅 서버에 성공적으로 재연결되었습니다.'
+              }
+            }]);
+          },
+          onMessage: (message) => {
+            console.log('수신된 메시지:', message);
+            
+            if (message.type === 'typing') {
+              setIsTyping(message.content.is_typing || false);
+              return;
+            }
+            
+            if (message.player_id === 'ai_advisor' && message.content.is_ai) {
+              setIsTyping(false);
+            }
+            
+            setChatMessages(prev => [...prev, message]);
+          },
+          onClose: () => {
+            setConnected(false);
+            setError('서버와의 연결이 종료되었습니다. 오프라인 모드로 전환되었습니다.');
+          },
+          onError: () => {
+            setConnected(false);
+            setError('서버 연결 중 오류가 발생했습니다. 오프라인 모드로 전환되었습니다.');
+          }
+        },
+        true
+      );
+    }
   };
   
   // 시간 포맷팅 함수
@@ -213,12 +286,21 @@ export default function GameChatPage() {
           </button>
           <h1 className="font-bold text-lg">채팅 게임 모드</h1>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-2">
+          {!connected && (
+            <button 
+              onClick={handleReconnect} 
+              className="p-2 hover:bg-slate-700 rounded-full text-blue-400"
+              title="서버에 재연결"
+            >
+              <RefreshCw size={16} />
+            </button>
+          )}
           <span className={cn(
             "px-2 py-1 rounded-full text-xs",
-            connected ? "bg-green-500" : "bg-red-500"
+            connected ? "bg-green-500" : offlineMode ? "bg-yellow-500" : "bg-red-500"
           )}>
-            {connected ? "연결됨" : "연결 끊김"}
+            {connected ? "연결됨" : offlineMode ? "오프라인 모드" : "연결 끊김"}
           </span>
         </div>
       </header>
@@ -247,6 +329,7 @@ export default function GameChatPage() {
               msg.player_id === 'ai_advisor' ? "bg-slate-700" :
               msg.type === 'system' ? "mx-auto bg-slate-600 text-center max-w-md" :
               msg.type === 'event' ? "mx-auto bg-amber-800 text-center max-w-md" :
+              msg.type === 'error' ? "mx-auto bg-red-700 text-center max-w-md" :
               "bg-slate-700"
             )}
           >
@@ -300,16 +383,14 @@ export default function GameChatPage() {
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="명령이나 질문을 입력하세요..."
-            disabled={!connected}
+            placeholder={offlineMode ? "오프라인 모드: LLM과 대화할 수 있습니다..." : "명령이나 질문을 입력하세요..."}
             className="flex-1 bg-slate-700 rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <button
             type="submit"
-            disabled={!connected}
             className={cn(
               "p-2 rounded-lg",
-              connected ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-600 cursor-not-allowed"
+              "bg-indigo-600 hover:bg-indigo-700"
             )}
           >
             <Send size={20} />
@@ -323,6 +404,11 @@ export default function GameChatPage() {
           <span className="text-indigo-400">!unit</span>,{' '}
           <span className="text-indigo-400">!city</span>,{' '}
           <span className="text-indigo-400">!research</span>
+          {offlineMode && (
+            <span className="ml-2 text-yellow-400">
+              (오프라인 모드: 일부 게임 기능이 제한됩니다)
+            </span>
+          )}
         </div>
       </form>
     </div>
